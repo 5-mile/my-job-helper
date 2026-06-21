@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# ✨ [다크모드 시인성 200% 패치] 완벽한 대비값 CSS 주입
+# ✨ [테마 버그 종결 패치] 라이트/다크 양방향 색상 강제 지정 CSS
 # ==========================================
 st.markdown("""
 <style>
@@ -26,12 +26,12 @@ st.markdown("""
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
     }
     
-    /* 📱 카드 레이아웃 */
+    /* 📱 카드 레이아웃 (투명 배경으로 시스템 테마 유연 대응) */
     div[data-testid="stVerticalBlockBorderWithBorder"] {
         border: 1px solid rgba(128, 128, 128, 0.2) !important;
         border-radius: 14px !important;
         padding: 20px !important;
-        background: transparent !important; /* 배경은 시스템 기본 다크/라이트에 위임 */
+        background: transparent !important; 
         margin-bottom: 12px !important;
         transition: all 0.2s ease-in-out !important;
     }
@@ -54,29 +54,28 @@ st.markdown("""
     .bg-date { background-color: rgba(220, 38, 38, 0.15) !important; color: #EF4444 !important; font-weight: 700; }
     .bg-loc { background-color: rgba(22, 101, 52, 0.15) !important; color: #10B981 !important; }
     .bg-welfare { background-color: rgba(180, 83, 9, 0.15) !important; color: #F59E0B !important; font-size: 0.75rem; font-weight: 500; }
-    .bg-jobplanet { background-color: rgba(128, 128, 128, 0.12) !important; color: var(--text-color) !important; font-weight: 700; border: 1px solid rgba(128, 128, 128, 0.3) !important; }
+    .bg-jobplanet { background-color: rgba(128, 128, 128, 0.12) !important; color: #475569 !important; font-weight: 700; border: 1px solid rgba(128, 128, 128, 0.3) !important; }
     
-    /* ☀️ [기본 라이트모드 텍스트 세팅] */
-    .company-title { 
-        font-size: 1.2rem !important; 
-        font-weight: 700 !important; 
-        color: #1E293B !important; /* 시인성이 좋은 어두운 슬레이트색 */
-        margin-bottom: 2px !important; 
-    }
-    .job-title { 
-        font-size: 0.88rem !important; 
-        color: #475569 !important; 
-        margin-bottom: 16px !important; 
-        line-height: 1.4 !important; 
+    /* ☀️ [1단계: 라이트모드 전용 색상 강제 고정] */
+    @media (prefers-color-scheme: light) {
+        .company-title { 
+            color: #0F172A !important; /* 선명하고 진한 다크 네이비 */
+        }
+        .job-title { 
+            color: #334155 !important; /* 가독성 높은 진한 슬레이트 회색 */
+        }
     }
     
-    /* 🌙 [핵심 패치: 브라우저가 다크모드일 때 글자색 강제 대반전 적용] */
+    /* 🌙 [2단계: 다크모드 전용 색상 강제 고정] */
     @media (prefers-color-scheme: dark) {
         .company-title {
-            color: #F8FAFC !important; /* 최고 밝기의 선명한 백색 계열로 변경 */
+            color: #F8FAFC !important; /* 선명하고 밝은 오프화이트 */
         }
         .job-title {
-            color: #CBD5E1 !important; /* 은은하고 잘 보이는 밝은 회색으로 변경 */
+            color: #E2E8F0 !important; /* 시인성이 확보된 연한 그레이 */
+        }
+        .bg-jobplanet {
+            color: #E2E8F0 !important;
         }
     }
     
