@@ -5,18 +5,18 @@ from google import genai
 import time
 import sqlite3
 import re
-import os # 💾 서버 절대 경로 처리를 위한 내장 라이브러리
+import os
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. 웹페이지 기본 설정 (가장 최상단 고정)
+# 1. 웹페이지 기본 설정 (최상단 고정)
 st.set_page_config(
-    page_title="👑 ULTIMATE 모바일 채용 매니저",
-    page_icon="👑",
+    page_title="통합 채용 정보 및 자소서 시스템",
+    page_icon="💼",
     layout="wide"
 )
 
 # ==========================================
-# ✨ [UI 리뉴얼] 다크 모드 완벽 호환 모던 CSS 주입
+# ✨ [UI/UX 대규모 패치] PC-모바일 호환 균형 그리드 CSS 주입
 # ==========================================
 st.markdown("""
 <style>
@@ -24,55 +24,63 @@ st.markdown("""
     
     html, body, [data-testid="stAppViewContainer"] { 
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
+        background-color: #FAFAFA !important;
     }
     
-    /* 📱 모바일 터치 환경을 고려한 카드 컴포넌트 리디자인 */
+    /* 📱 미니멀 카드 스타일 구조 조정 */
     div[data-testid="stVerticalBlockBorderWithBorder"] {
-        border: 1px solid rgba(128, 128, 128, 0.15) !important;
-        border-radius: 16px !important;
-        padding: 16px !important;
-        background: rgba(128, 128, 128, 0.02) !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02) !important;
-        transition: all 0.25s ease !important;
+        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        border-radius: 14px !important;
+        padding: 20px !important;
+        background: #FFFFFF !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important;
+        margin-bottom: 12px !important;
+        transition: all 0.2s ease-in-out !important;
     }
     div[data-testid="stVerticalBlockBorderWithBorder"]:hover {
-        transform: translateY(-4px) !important;
-        border-color: #3B82F6 !important;
-        box-shadow: 0 12px 24px rgba(59, 130, 246, 0.08) !important;
+        border-color: #2563EB !important;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.04) !important;
     }
     
-    /* 🏷️ 터치 친화형 마이크로 뱃지 시스템 */
+    /* 🏷️ 미니멀 플랫 뱃지 */
     .platform-badge { 
         display: inline-block; 
-        padding: 4px 8px; 
-        border-radius: 6px; 
+        padding: 3px 6px; 
+        border-radius: 4px; 
         font-size: 0.72rem; 
         font-weight: 600; 
         margin-right: 4px; 
         margin-bottom: 6px; 
     }
-    .bg-saramin { background-color: rgba(59, 130, 246, 0.15); color: #3B82F6; }
-    .bg-date { background-color: rgba(239, 68, 68, 0.15); color: #EF4444; }
-    .bg-loc { background-color: rgba(16, 185, 129, 0.15); color: #10B981; }
-    .bg-welfare { background-color: rgba(245, 158, 11, 0.15); color: #D97706; }
-    .bg-jobplanet { background-color: rgba(34, 197, 94, 0.15); color: #16A34A; font-weight: 700; }
+    .bg-saramin { background-color: #EFF6FF; color: #1D4ED8; }
+    .bg-date { background-color: #FEF2F2; color: #DC2626; font-weight: 700; }
+    .bg-loc { background-color: #F0FDF4; color: #166534; }
+    .bg-welfare { background-color: #FFFBEB; color: #B45309; font-size: 0.75rem; font-weight: 500; }
+    .bg-jobplanet { background-color: #F8FAFC; color: #334155; font-weight: 700; border: 1px solid #E2E8F0; }
     
-    .company-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 4px; }
-    .job-title { font-size: 0.88rem; opacity: 0.8; margin-bottom: 12px; line-height: 1.4; }
+    .company-title { font-size: 1.2rem; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
+    .job-title { font-size: 0.88rem; color: #475569; margin-bottom: 16px; line-height: 1.4; }
     
-    /* 📱 스마트폰 화면 대응 컴포넌트 제어 */
+    /* 🛠️ [가독성 완화] 버튼 정렬이 지나치게 찢어지는 현상 방지 및 텍스트 강제 정렬 */
     button {
         width: 100% !important;
-        margin-bottom: 6px !important;
+        border-radius: 8px !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        height: 38px !important;
+        padding: 0px 8px !important;
+        margin: 0px !important;
+        white-space: nowrap !important; /* 글자가 절대 잘리지 않고 한 줄로 나오게 고정 */
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 💾 [서버 경로 대응] SQLite 데이터베이스 인프라 구축
+# 💾 SQLite 데이터베이스 인프라 구축
 # ==========================================
 def get_db_connection():
-    """배포 서버 환경과 로컬 환경에 모두 대응하는 절대 경로 DB 연결 함수"""
     db_path = os.path.join(os.path.dirname(__file__), "jobs.db")
     return sqlite3.connect(db_path)
 
@@ -106,7 +114,7 @@ def load_from_db():
     cursor.execute("SELECT source, company, position, date, link FROM scrapped_jobs")
     rows = cursor.fetchall()
     conn.close()
-    return [{"source": r[0], "company": r[1], "position": r[2], "date": r[3], "link": r[4], "welfares": ["⭐ 보관된 공고"], "rating": 3.0, "jp_link": "https://www.jobplanet.co.kr"} for r in rows]
+    return [{"source": r[0], "company": r[1], "position": r[2], "date": r[3], "link": r[4], "welfares": [], "rating": 3.0, "jp_link": "https://www.jobplanet.co.kr"} for r in rows]
 
 def delete_from_db(job):
     conn = get_db_connection()
@@ -126,7 +134,6 @@ def analyze_welfare_and_rating(company, position):
     if re.search(r'(기숙사|사택|통근버스|셔틀|통근|차량지원)', text_to_search): welfares.append("🚌 기숙사/교통")
     if re.search(r'(식사|중식|석식|조식|식대|급식)', text_to_search): welfares.append("🍔 식사제공")
     if re.search(r'(성과급|보너스|상여|인센티브)', text_to_search): welfares.append("💰 성과급")
-    if not welfares: welfares.append("⚙️ 현장복지")
 
     hash_val = sum(ord(char) for char in company)
     if any(x in company for x in ["삼성", "현대", "LG", "SK", "기아"]): rating = round(3.6 + (hash_val % 5) * 0.1, 1)
@@ -171,17 +178,26 @@ def fetch_page_worker(page, keyword, sort_code):
     except: pass
     return page_jobs
 
-@st.cache_data(show_spinner="스마트폰 동기화를 위해 공고를 고속 정렬 중입니다...")
+@st.cache_data(show_spinner="공고 데이터를 최적화하여 수집 중입니다...")
 def fetch_all_jobs_speed(keyword, sort_code, target_count=100):
     classified_jobs = {"대기업": [], "중견기업": [], "외국계": [], "일반/기타기업": []}
     pages_to_fetch = [1, 2, 3]
     all_workers_output = []
+    
     with ThreadPoolExecutor(max_workers=3) as executor:
         results = executor.map(lambda p: fetch_page_worker(p, keyword, sort_code), pages_to_fetch)
         for res in results: all_workers_output.extend(res)
-    for job in all_workers_output[:target_count]:
+        
+    unique_jobs = {}
+    for job in all_workers_output:
+        unique_key = f"{job['company']}_{job['position']}"
+        if unique_key not in unique_jobs:
+            unique_jobs[unique_key] = job
+            
+    for job in list(unique_jobs.values())[:target_count]:
         cat = job["category"]
         classified_jobs[cat].append(job)
+        
     return classified_jobs
 
 # ==========================================
@@ -211,100 +227,139 @@ def generate_ai_data(api_key, job_info, profile, questions, tone, char_limit):
         except:
             letter, score, good, bad = raw, 85, "스펙 일치율 높음", "구체성 보완 요망"
         return letter, score, good, bad
-    except: return "❌ 구동 실패. API 키 또는 서버 세팅을 검토해 주세요.", 0, "", ""
+    except: return "❌ 구동 실패", 0, "", ""
 
 # ==========================================
-# 👑 모바일 대시보드 인터페이스 조립
+# 🏢 메인 UI 레이아웃 조립
 # ==========================================
-st.markdown('<div style="font-size:1.8rem; font-weight:800; margin-bottom:4px;">👑 통합 채용 & 자소서 모바일 에디션</div>', unsafe_allow_html=True)
-st.caption("스마트폰 세로 화면 크기에 맞춰 완벽하게 터치 반응형 최적화가 완비된 모드입니다.")
+st.markdown('<div style="font-size:1.6rem; font-weight:700; color:#0F172A; margin-bottom:2px;">통합 채용 공고 & 자소서 관리 시스템</div>', unsafe_allow_html=True)
+st.caption("스마트폰 및 PC 환경에 맞추어 레이아웃이 유연하게 동기화되는 미니멀리즘 대시보드입니다.")
 
-search_keyword = st.text_input("🔍 공고 통합 검색", value="생산직")
-sort_display = st.selectbox("📊 리스트 정렬 필터", ["인기순 (조회수)", "최근 등록순"])
-sort_code = "rc" if "인기" in sort_display else "rd"
+search_keyword = st.text_input("공고 검색어 입력", value="")
+sort_display = st.selectbox("리스트 정렬 조건 선택", ["인기순 (조회수 기준)", "최근 등록일순", "마감일순 (임박 공고 우선)"])
 
-job_data = fetch_all_jobs_speed(search_keyword, sort_code, target_count=100)
+if "인기순" in sort_display: sort_code = "rc"
+elif "최근 등록일순" in sort_display: sort_code = "rd"
+else: sort_code = "pa"
 
 st.divider()
 
 # 사이드바 제어 패널
-st.sidebar.markdown("### ⚙️ 모바일 관제 패널")
+st.sidebar.markdown("### 관제 설정 패널")
 
-# 🔒 [보안 오류 완벽 패치] 로컬/서버 Secrets 파일 미존재 예외 처리 분기벽 수립
 api_key_input = ""
 try:
     if st.secrets and "GEMINI_API_KEY" in st.secrets:
         api_key_input = st.secrets["GEMINI_API_KEY"]
-        st.sidebar.success("🔒 서버 보안 API 키 동기화 완료")
-except Exception:
-    # 에러를 완전히 침묵시키고 수동 입력창 단계로 무감각하게 유도합니다.
-    pass
+        st.sidebar.success("보안 API 키 연동 완료")
+except Exception: pass
 
 if not api_key_input:
     api_key_input = st.sidebar.text_input("Gemini API Key 입력", type="password")
 
-min_rating = st.sidebar.slider("⭐ 최소 잡플래닛 평점 필터", 1.0, 5.0, 2.0, step=0.1)
-user_location = st.sidebar.text_input("🏠 희망 거주 지역", value="경북")
-tone_style = st.sidebar.selectbox("표현 말투 톤", ["성실함 중심의 진솔한 말투", "성과 중심의 자신감 넘치는 말투", "안전 중심의 신중한 말투"])
-char_limit = st.sidebar.radio("📝 글자 수 제약", ["500자 제한", "700자 제한", "1000자 제한"])
+min_rating = st.sidebar.slider("최소 잡플래닛 평점 커트라인", 1.0, 5.0, 2.0, step=0.1)
+user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", value="")
+tone_style = st.sidebar.selectbox("자소서 표현 말투 톤", ["성실함 중심의 진솔한 말투", "성과 중심의 자신감 넘치는 말투", "안전 중심의 신중한 말투"])
+char_limit = st.sidebar.radio("자소설닷컴 분량 규격", ["500자 제한", "700자 제한", "1000자 제한"])
 
-user_profile_input = st.sidebar.text_area("지원자 경력", value="- 학력: 고졸\n- 자격증: 지게차 면허\n- 경험: 제조라인 1년 근무", height=120)
-resume_questions_input = st.sidebar.text_area("작성 문항", value="1. 지원 동기와 포부\n2. 직무 역량", height=100)
+user_profile_input = st.sidebar.text_area("지원자 역량 및 이력 정보", value="- 학력: 고졸\n- 자격증: 지게차 면허\n- 경험: 포장 및 조립 생산라인 1년 근무", height=120)
+resume_questions_input = st.sidebar.text_area("작성할 질문 문항 본문", value="1. 지원 동기와 포부\n2. 직무 역량", height=100)
 
 col1, col2 = st.columns([1.1, 1])
 
 with col1:
-    st.markdown("#### 📋 실시간 채용 목록")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["대기업", "중견", "외국계", "기타", "⭐ 보관"])
+    st.markdown("#### 실시간 채용 리스트")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["대기업", "중견기업", "외국계", "일반/기타", "보관함"])
     
+    if search_keyword.strip():
+        job_data = fetch_all_jobs_speed(search_keyword, sort_code, target_count=100)
+    else:
+        job_data = None
+
     cats = [("대기업", tab1), ("중견기업", tab2), ("외국계", tab3), ("일반/기타기업", tab4)]
+    
     for c_name, t_obj in cats:
         with t_obj:
-            if not job_data[c_name]: st.info("공고가 비어있습니다.")
+            if not job_data:
+                st.info("💡 상단의 '공고 검색어 입력' 칸에 검색어를 입력하시면 실시간 채용 데이터가 정렬됩니다.")
+            elif not job_data[c_name]:
+                st.info("조건에 부합하는 채용 공고가 없습니다.")
             else:
-                sorted_jobs = sorted(job_data[c_name], key=lambda x: user_location in x.get('location', ''), reverse=True)
+                if user_location.strip():
+                    sorted_jobs = sorted(job_data[c_name], key=lambda x: user_location in x.get('location', ''), reverse=True)
+                else:
+                    sorted_jobs = job_data[c_name]
+                    
                 for idx, job in enumerate(sorted_jobs):
                     if job['rating'] < min_rating: continue
                     with st.container():
                         badge_type = "bg-saramin" if "사람인" in job['source'] else "bg-demand"
-                        welfare_html = "".join([f'<span class="platform-badge bg-welfare">{w}</span>' for w in job['welfares']])
-                        st.markdown(f'<div style="margin-bottom:4px;"><span class="platform-badge {badge_type}">{job["source"]}</span><span class="platform-badge bg-loc">📍 {job["location"]}</span><span class="platform-badge bg-jobplanet">⭐ {job["rating"]}</span></div><div class="company-title">{job["company"]}</div><div class="job-title">{job["position"]}</div><div>{welfare_html}</div>', unsafe_allow_html=True)
+                        welfare_html = ""
+                        if job['welfares']:
+                            welfare_html = "".join([f'<span class="platform-badge bg-welfare">{w}</span>' for w in job['welfares']])
                         
-                        if st.button("⚡ 자소서 생성", key=f"b_{c_name}_{idx}"): st.session_state['selected_job'] = job
-                        if st.button("⭐ 공고 스크랩", key=f"s_{c_name}_{idx}"):
-                            save_to_db(job)
-                            st.toast("📥 DB 영구 보존 완료")
-                        st.link_button("🌐 공고 페이지 이동", url=job['link'])
+                        st.markdown(f"""
+                        <div style="margin-bottom:4px;">
+                            <span class="platform-badge bg-date">⏳ {job["date"]}</span>
+                            <span class="platform-badge {badge_type}">{job["source"]}</span>
+                            <span class="platform-badge bg-loc">📍 {job["location"]}</span>
+                            <span class="platform-badge bg-jobplanet">★ {job["rating"]}</span>
+                        </div>
+                        <div class="company-title">{job["company"]}</div>
+                        <div class="job-title">{job["position"]}</div>
+                        {f'<div style="margin-bottom:12px;">{welfare_html}</div>' if welfare_html else '<div style="margin-bottom:4px;"></div>'}
+                        """, unsafe_allow_html=True)
+                        
+                        # 🛠️ [레이아웃 대수정] 넓은 PC 모니터에서도 텍스트가 절대 안 잘리도록 최적화된 비율 분배
+                        btn_col1, btn_col2, btn_col3 = st.columns([1.5, 1.1, 1.1])
+                        with btn_col1:
+                            if st.button("📝 자소서 초안 작성", key=f"b_{c_name}_{idx}"): 
+                                st.session_state['selected_job'] = job
+                        with btn_col2:
+                            # 버튼 내부에 직관적인 글자 추가 및 공간 확장
+                            if st.button("⭐ 공고 스크랩", key=f"s_{c_name}_{idx}"):
+                                save_to_db(job)
+                                st.toast("보관함에 저장되었습니다.")
+                        with btn_col3:
+                            # 버튼 내부에 직관적인 글자 추가 및 공간 확장
+                            st.link_button("🌐 공고 상세보기", url=job['link'])
 
+    # 보관함 탭
     with tab5:
         db_jobs = load_from_db()
-        if not db_jobs: st.write("보관함이 비어있습니다.")
+        if not db_jobs: 
+            st.write("보관함에 스크랩된 공고가 없습니다.")
         else:
             for s_idx, s_job in enumerate(db_jobs):
                 with st.container():
-                    st.markdown(f'<div style="margin-bottom:4px;"><span class="platform-badge bg-saramin">{s_job["source"]}</span></div><div class="company-title">{s_job["company"]}</div><div class="job-title">{s_job["position"]}</div>', unsafe_allow_html=True)
-                    if st.button("⚡ 자소서 생성", key=f"sb_{s_idx}"): st.session_state['selected_job'] = s_job
-                    if st.button("❌ 스크랩 취소", key=f"sd_{s_idx}"):
-                        delete_from_db(s_job)
-                        st.rerun()
+                    st.markdown(f'<div style="margin-bottom:4px;"><span class="platform-badge bg-date">{s_job["date"]}</span></div><div class="company-title">{s_job["company"]}</div><div class="job-title">{s_job["position"]}</div>', unsafe_allow_html=True)
+                    
+                    s_col1, s_col2 = st.columns([1.5, 1.1])
+                    with s_col1:
+                        if st.button("📝 자소서 초안 작성", key=f"sb_{s_idx}"): 
+                            st.session_state['selected_job'] = s_job
+                    with s_col2:
+                        if st.button("❌ 스크랩 취소", key=f"sd_{s_idx}"):
+                            delete_from_db(s_job)
+                            st.rerun()
 
 with col2:
-    st.markdown("#### 📝 AI 모의 심사 및 원고")
+    st.markdown("#### 서류 모의 심사 및 원고 편집기")
     if 'selected_job' in st.session_state:
         selected_job = st.session_state['selected_job']
-        st.success(f"🎯 **선택 기업:** {selected_job['company']}")
+        st.info(f"선택된 기업: {selected_job['company']}")
         
-        if not api_key_input: st.warning("⚠️ 좌측 관제 패널에 Gemini API Key를 입력하셔야 가동됩니다.")
+        if not api_key_input: st.warning("자기소개서를 자동 빌드하려면 API Key가 필요합니다.")
         else:
-            with st.spinner("모바일 고속 매싱 작성이 진행 중입니다..."):
+            with st.spinner("AI 심사관이 데이터를 매싱하여 초안을 가공 중입니다..."):
                 letter, score, good, bad = generate_ai_data(api_key_input, selected_job, user_profile_input, resume_questions_input, tone_style, char_limit)
                 sc1, sc2 = st.columns([1, 2])
-                with sc1: st.metric("예상 점수", f"{score}점")
-                with sc2: st.markdown(f"**👍 장점:** {good}\n**🔧 보완:** {bad}")
+                with sc1: st.metric("합격 예측 스코어", f"{score}점")
+                with sc2: st.markdown(f"**우수 요인:** {good}\n**보완 권장:** {bad}")
                 st.progress(score / 100)
                 st.divider()
-                st.metric("실시간 글자 수 세기", f"{len(letter)} 자")
-                st.text_area("📋 완성 원본 본문", value=letter, height=350)
-                st.download_button("💾 자소서 파일 스마트폰 다운로드", data=letter, file_name=f"{selected_job['company']}_자소서.txt")
+                st.metric("자소설닷컴 실시간 글자 수", f"{len(letter)} 자")
+                st.text_area("자기소개서 본문 초안", value=letter, height=350)
+                st.download_button("텍스트 파일(.txt)로 내 컴퓨터에 다운로드", data=letter, file_name=f"{selected_job['company']}_자소서.txt")
     else:
-        st.info("👈 공고 카드 안의 **[⚡ 자소서 생성]** 버튼을 터치하면 이곳에 서류 심사 보고서가 로드됩니다.")
+        st.info("왼쪽 채용 공고 리스트에서 [자소서 초안 작성] 버튼을 선택하시면 실시간 평가 레포트가 자동 로드됩니다.")
