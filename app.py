@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# ✨ [다크모드 대응 완벽 패치] 시스템 테마 동기화 CSS 주입
+# ✨ [다크모드 시인성 200% 패치] 완벽한 대비값 CSS 주입
 # ==========================================
 st.markdown("""
 <style>
@@ -26,12 +26,12 @@ st.markdown("""
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
     }
     
-    /* 📱 라이트/다크모드에 맞춰 카드 배경과 경계선이 유연하게 반응하도록 설정 */
+    /* 📱 카드 레이아웃 */
     div[data-testid="stVerticalBlockBorderWithBorder"] {
         border: 1px solid rgba(128, 128, 128, 0.2) !important;
         border-radius: 14px !important;
         padding: 20px !important;
-        background: var(--background-color, #FFFFFF) !important;
+        background: transparent !important; /* 배경은 시스템 기본 다크/라이트에 위임 */
         margin-bottom: 12px !important;
         transition: all 0.2s ease-in-out !important;
     }
@@ -50,28 +50,37 @@ st.markdown("""
         margin-right: 4px; 
         margin-bottom: 6px; 
     }
-    .bg-saramin { background-color: rgba(37, 99, 235, 0.15); color: #3B82F6; }
-    .bg-date { background-color: rgba(220, 38, 38, 0.15); color: #EF4444; font-weight: 700; }
-    .bg-loc { background-color: rgba(22, 101, 52, 0.15); color: #10B981; }
-    .bg-welfare { background-color: rgba(180, 83, 9, 0.15); color: #F59E0B; font-size: 0.75rem; font-weight: 500; }
-    .bg-jobplanet { background-color: rgba(128, 128, 128, 0.1); color: var(--text-color, #334155); font-weight: 700; border: 1px solid rgba(128, 128, 128, 0.3); }
+    .bg-saramin { background-color: rgba(37, 99, 235, 0.15) !important; color: #3B82F6 !important; }
+    .bg-date { background-color: rgba(220, 38, 38, 0.15) !important; color: #EF4444 !important; font-weight: 700; }
+    .bg-loc { background-color: rgba(22, 101, 52, 0.15) !important; color: #10B981 !important; }
+    .bg-welfare { background-color: rgba(180, 83, 9, 0.15) !important; color: #F59E0B !important; font-size: 0.75rem; font-weight: 500; }
+    .bg-jobplanet { background-color: rgba(128, 128, 128, 0.12) !important; color: var(--text-color) !important; font-weight: 700; border: 1px solid rgba(128, 128, 128, 0.3) !important; }
     
-    /* 🛠️ [다크모드 핵심 수정] 글자색을 고정값(#0F172A)이 아닌 시스템 변수(var)로 지정하여 자동 반전 */
+    /* ☀️ [기본 라이트모드 텍스트 세팅] */
     .company-title { 
-        font-size: 1.2rem; 
-        font-weight: 700; 
-        color: var(--text-color, #0F172A) !important; 
-        margin-bottom: 2px; 
+        font-size: 1.2rem !important; 
+        font-weight: 700 !important; 
+        color: #1E293B !important; /* 시인성이 좋은 어두운 슬레이트색 */
+        margin-bottom: 2px !important; 
     }
     .job-title { 
-        font-size: 0.88rem; 
-        color: var(--text-color, #475569) !important; 
-        opacity: 0.85;
-        margin-bottom: 16px; 
-        line-height: 1.4; 
+        font-size: 0.88rem !important; 
+        color: #475569 !important; 
+        margin-bottom: 16px !important; 
+        line-height: 1.4 !important; 
     }
     
-    /* 🛠️ 버튼 정렬 균형화 및 텍스트 강제 고정 */
+    /* 🌙 [핵심 패치: 브라우저가 다크모드일 때 글자색 강제 대반전 적용] */
+    @media (prefers-color-scheme: dark) {
+        .company-title {
+            color: #F8FAFC !important; /* 최고 밝기의 선명한 백색 계열로 변경 */
+        }
+        .job-title {
+            color: #CBD5E1 !important; /* 은은하고 잘 보이는 밝은 회색으로 변경 */
+        }
+    }
+    
+    /* 🛠️ 반응형 버튼 정렬 */
     button {
         width: 100% !important;
         border-radius: 8px !important;
@@ -242,7 +251,7 @@ def generate_ai_data(api_key, job_info, profile, questions, tone, char_limit):
 # ==========================================
 # 🏢 메인 UI 레이아웃 조립
 # ==========================================
-st.markdown('<div style="font-size:1.6rem; font-weight:700; var(--text-color, #0F172A); margin-bottom:2px;">통합 채용 공고 & 자소서 관리 시스템</div>', unsafe_allow_html=True)
+st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px;">통합 채용 공고 & 자소서 관리 시스템</div>', unsafe_allow_html=True)
 st.caption("스마트폰 및 PC 환경에 맞추어 레이아웃이 유연하게 동기화되는 미니멀리즘 대시보드입니다.")
 
 search_keyword = st.text_input("공고 검색어 입력", value="")
