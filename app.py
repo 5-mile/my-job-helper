@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# ✨ [UI/UX 대규모 패치] PC-모바일 호환 균형 그리드 CSS 주입
+# ✨ [다크모드 대응 완벽 패치] 시스템 테마 동기화 CSS 주입
 # ==========================================
 st.markdown("""
 <style>
@@ -24,22 +24,20 @@ st.markdown("""
     
     html, body, [data-testid="stAppViewContainer"] { 
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
-        background-color: #FAFAFA !important;
     }
     
-    /* 📱 미니멀 카드 스타일 구조 조정 */
+    /* 📱 라이트/다크모드에 맞춰 카드 배경과 경계선이 유연하게 반응하도록 설정 */
     div[data-testid="stVerticalBlockBorderWithBorder"] {
-        border: 1px solid rgba(0, 0, 0, 0.06) !important;
+        border: 1px solid rgba(128, 128, 128, 0.2) !important;
         border-radius: 14px !important;
         padding: 20px !important;
-        background: #FFFFFF !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01) !important;
+        background: var(--background-color, #FFFFFF) !important;
         margin-bottom: 12px !important;
         transition: all 0.2s ease-in-out !important;
     }
     div[data-testid="stVerticalBlockBorderWithBorder"]:hover {
         border-color: #2563EB !important;
-        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.04) !important;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.08) !important;
     }
     
     /* 🏷️ 미니멀 플랫 뱃지 */
@@ -52,16 +50,28 @@ st.markdown("""
         margin-right: 4px; 
         margin-bottom: 6px; 
     }
-    .bg-saramin { background-color: #EFF6FF; color: #1D4ED8; }
-    .bg-date { background-color: #FEF2F2; color: #DC2626; font-weight: 700; }
-    .bg-loc { background-color: #F0FDF4; color: #166534; }
-    .bg-welfare { background-color: #FFFBEB; color: #B45309; font-size: 0.75rem; font-weight: 500; }
-    .bg-jobplanet { background-color: #F8FAFC; color: #334155; font-weight: 700; border: 1px solid #E2E8F0; }
+    .bg-saramin { background-color: rgba(37, 99, 235, 0.15); color: #3B82F6; }
+    .bg-date { background-color: rgba(220, 38, 38, 0.15); color: #EF4444; font-weight: 700; }
+    .bg-loc { background-color: rgba(22, 101, 52, 0.15); color: #10B981; }
+    .bg-welfare { background-color: rgba(180, 83, 9, 0.15); color: #F59E0B; font-size: 0.75rem; font-weight: 500; }
+    .bg-jobplanet { background-color: rgba(128, 128, 128, 0.1); color: var(--text-color, #334155); font-weight: 700; border: 1px solid rgba(128, 128, 128, 0.3); }
     
-    .company-title { font-size: 1.2rem; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
-    .job-title { font-size: 0.88rem; color: #475569; margin-bottom: 16px; line-height: 1.4; }
+    /* 🛠️ [다크모드 핵심 수정] 글자색을 고정값(#0F172A)이 아닌 시스템 변수(var)로 지정하여 자동 반전 */
+    .company-title { 
+        font-size: 1.2rem; 
+        font-weight: 700; 
+        color: var(--text-color, #0F172A) !important; 
+        margin-bottom: 2px; 
+    }
+    .job-title { 
+        font-size: 0.88rem; 
+        color: var(--text-color, #475569) !important; 
+        opacity: 0.85;
+        margin-bottom: 16px; 
+        line-height: 1.4; 
+    }
     
-    /* 🛠️ [가독성 완화] 버튼 정렬이 지나치게 찢어지는 현상 방지 및 텍스트 강제 정렬 */
+    /* 🛠️ 버튼 정렬 균형화 및 텍스트 강제 고정 */
     button {
         width: 100% !important;
         border-radius: 8px !important;
@@ -70,7 +80,7 @@ st.markdown("""
         height: 38px !important;
         padding: 0px 8px !important;
         margin: 0px !important;
-        white-space: nowrap !important; /* 글자가 절대 잘리지 않고 한 줄로 나오게 고정 */
+        white-space: nowrap !important;
         overflow: hidden;
         text-overflow: ellipsis;
     }
@@ -232,7 +242,7 @@ def generate_ai_data(api_key, job_info, profile, questions, tone, char_limit):
 # ==========================================
 # 🏢 메인 UI 레이아웃 조립
 # ==========================================
-st.markdown('<div style="font-size:1.6rem; font-weight:700; color:#0F172A; margin-bottom:2px;">통합 채용 공고 & 자소서 관리 시스템</div>', unsafe_allow_html=True)
+st.markdown('<div style="font-size:1.6rem; font-weight:700; var(--text-color, #0F172A); margin-bottom:2px;">통합 채용 공고 & 자소서 관리 시스템</div>', unsafe_allow_html=True)
 st.caption("스마트폰 및 PC 환경에 맞추어 레이아웃이 유연하게 동기화되는 미니멀리즘 대시보드입니다.")
 
 search_keyword = st.text_input("공고 검색어 입력", value="")
@@ -310,18 +320,15 @@ with col1:
                         {f'<div style="margin-bottom:12px;">{welfare_html}</div>' if welfare_html else '<div style="margin-bottom:4px;"></div>'}
                         """, unsafe_allow_html=True)
                         
-                        # 🛠️ [레이아웃 대수정] 넓은 PC 모니터에서도 텍스트가 절대 안 잘리도록 최적화된 비율 분배
                         btn_col1, btn_col2, btn_col3 = st.columns([1.5, 1.1, 1.1])
                         with btn_col1:
                             if st.button("📝 자소서 초안 작성", key=f"b_{c_name}_{idx}"): 
                                 st.session_state['selected_job'] = job
                         with btn_col2:
-                            # 버튼 내부에 직관적인 글자 추가 및 공간 확장
                             if st.button("⭐ 공고 스크랩", key=f"s_{c_name}_{idx}"):
                                 save_to_db(job)
                                 st.toast("보관함에 저장되었습니다.")
                         with btn_col3:
-                            # 버튼 내부에 직관적인 글자 추가 및 공간 확장
                             st.link_button("🌐 공고 상세보기", url=job['link'])
 
     # 보관함 탭
