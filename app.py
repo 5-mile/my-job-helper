@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# ✨ 다크모드 최적화 소프트 슬레이트 & 블루 인핸스 CSS
+# ✨ [모바일 완벽 호환] 찌부러짐 방지 자동 1열/2열 가변 반응형 Grid CSS
 # ==========================================
 st.markdown("""
 <style>
@@ -31,7 +31,7 @@ st.markdown("""
         border-radius: 12px !important;
         padding: 18px !important;
         background: rgba(255, 255, 255, 0.02) !important; 
-        margin-bottom: 14px !important;
+        margin-bottom: 12px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
         transition: all 0.2s ease-in-out !important;
     }
@@ -60,22 +60,30 @@ st.markdown("""
     
     /* 🏢 회사 및 공고 정보 폰트 위계 조정 */
     .company-title { 
-        font-size: 1.4rem !important; 
+        font-size: 1.35rem !important; 
         font-weight: 800 !important; 
         color: #F8FAFC !important; 
         margin-top: 4px !important;
         margin-bottom: 6px !important; 
         letter-spacing: -0.02em !important;
+        line-height: 1.2 !important;
     }
     
     .job-title { 
-        font-size: 1.0rem !important; 
+        font-size: 0.98rem !important; 
         font-weight: 500 !important;
         color: #94A3B8 !important; 
         margin-bottom: 0px !important; 
         line-height: 1.45 !important; 
     }
     
+    /* 🚨 [핵심 패치] 모바일 화면(가로 768px 이하)일 때 버튼 및 레이아웃 자동 크기 최적화 */
+    @media (max-width: 768px) {
+        .company-title { font-size: 1.15rem !important; }
+        .job-title { font-size: 0.9rem !important; }
+        .platform-badge { font-size: 0.68rem !important; padding: 3px 6px !important; }
+    }
+
     /* 라이트모드 스마트 안전장치 */
     @media (prefers-color-scheme: light) {
         .job-card-box { background: #FFFFFF !important; border: 1px solid #E2E8F0 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important; }
@@ -213,20 +221,15 @@ def fetch_all_jobs_speed(keyword, sort_code, target_count=100):
     return classified_jobs
 
 # ==========================================
-# 🎯 지정 네이버 블로그 2곳 다이렉트 RSS 파싱 엔진
+# 🎯 지정 네이버 블로그 2곳 RSS 파싱 엔진
 # ==========================================
 @st.cache_data(ttl=120, show_spinner="전문 블로그 피드 데이터를 100% 정제하여 동기화 중입니다...")
 def fetch_target_blog_rss():
-    blog_ids = [
-        {"id": "soonsoo5415"},
-        {"id": "dodam852"}
-    ]
-    
+    blog_ids = [{"id": "soonsoo5415"}, {"id": "dodam852"}]
     months_map = {
         "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05", "Jun": "06",
         "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"
     }
-    
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     combined_feeds = []
     
@@ -294,10 +297,10 @@ def fetch_target_blog_rss():
     return combined_feeds[:15]
 
 # ==========================================
-# 🏢 메인 UI 레이아웃 조립 (모바일 완벽 반응형 순서 재배치)
+# 🏢 메인 UI 레이아웃 조립 
 # ==========================================
-st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px; color:#3B82F6;">통합 채용 정보 및 전문 블로그 실시간 피드</div>', unsafe_allow_html=True)
-st.caption("모바일에서 우측 피드가 잘려 안 보이던 버그를 위아래 스태킹 구조로 전면 수정한 모바일 호환 버전입니다.")
+st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px; color:#3B82F6;">통합 채용 정보 및 실시간 블로그 피드</div>', unsafe_allow_html=True)
+st.caption("모바일 2열 배치로 인한 카드 찌부러짐 버그를 원천 해결한 프리미엄 반응형 버전입니다.")
 
 # 사이드바 제어 패널
 st.sidebar.markdown("### 관제 설정 패널")
@@ -307,16 +310,14 @@ user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", va
 st.divider()
 
 # ------------------------------------------
-# 🔥 [모바일 대패치 1순위] 지정 전문 블로그 추천 피드 (상시 노출되도록 무조건 최상단 배치)
+# 📰 [블로그 영역] 찌부러짐 원천 차단 스마트 컴포넌트 이식
 # ------------------------------------------
 st.markdown("### 📰 지정 전문 블로그 추천 피드")
 target_live_feed = fetch_target_blog_rss()
 
-# 가로 분할 대신 한 줄에 2개씩 컴팩트하게 배치되도록 반응형 컬럼 적용
-blog_cols = st.columns(2)
+# 🛠️ [해결책] 고정 2열 슬롯 대신 단독 카드로 하나씩 여유롭게 밀어내어 모바일 화면을 완벽하게 지원합니다.
 for b_idx, b_job in enumerate(target_live_feed):
-    # 왼쪽 오른쪽 컬럼에 번갈아가며 카드 렌더링
-    with blog_cols[b_idx % 2]:
+    with st.container():
         st.markdown(f"""
         <div class="job-card-box">
             <div>
@@ -337,16 +338,15 @@ for b_idx, b_job in enumerate(target_live_feed):
                 st.toast("보관함에 저장되었습니다.")
         with b_col2:
             st.link_button("🌐 블로그 원본 보기", url=b_job['link'])
-        st.markdown('<div style="margin-bottom:10px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
 
 st.divider()
 
 # ------------------------------------------
-# 📋 [모바일 대패치 2순위] 실시간 검색 채용 리스트 (블로그 피드 바로 하단 배치)
+# 🔍 [사람인 영역] 실시간 검색 채용 리스트
 # ------------------------------------------
 st.markdown("### 🔍 실시간 검색 채용 리스트")
 
-# 검색 컨트롤러를 리스트 바로 위에 배치하여 조작 직관성 부여
 search_keyword = st.text_input("공고 검색어 입력 (예: 생산, 품질, 현대 등)", value="생산")
 sort_display = st.selectbox("리스트 정렬 조건 선택", ["인기순 (조회수 기준)", "최근 등록일순", "마감일순 (임박 공고 우선)"])
 
@@ -395,7 +395,7 @@ for c_name, t_obj in cats:
                         save_to_db(job)
                         st.toast("보관함에 저장되었습니다.")
                 with btn_c2: st.link_button("🌐 공고 상세보기", url=job['link'])
-                st.markdown('<div style="margin-bottom:10px;"></div>', unsafe_allow_html=True)
+                st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
 
 with tab5:
     db_jobs = load_from_db()
