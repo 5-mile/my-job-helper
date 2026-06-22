@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# ✨ [모바일 완벽 호환] 찌부러짐 방지 자동 1열/2열 가변 반응형 Grid CSS
+# ✨ [UI/UX 디자인 쇄신] 눈부심 방지 조도 조절 및 모바일 그리드 붕괴 차단 CSS
 # ==========================================
 st.markdown("""
 <style>
@@ -25,14 +25,14 @@ st.markdown("""
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
     }
     
-    /* 📱 프리미엄 슬레이트 카드 컨테이너 */
+    /* 📱 [칸 분리 강화] 제목과 내용을 확실히 구획화하는 테두리 박스 모델 */
     .job-card-box {
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         border-radius: 12px !important;
-        padding: 18px !important;
-        background: rgba(255, 255, 255, 0.02) !important; 
-        margin-bottom: 12px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        padding: 16px !important;
+        background: rgba(255, 255, 255, 0.015) !important; 
+        margin-bottom: 14px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
         transition: all 0.2s ease-in-out !important;
     }
     .job-card-box:hover {
@@ -51,47 +51,36 @@ st.markdown("""
         margin-bottom: 8px; 
     }
     
-    .bg-large-corp { background-color: rgba(59, 130, 246, 0.15) !important; color: #60A5FA !important; border: 1px solid rgba(59, 130, 246, 0.25) !important; }
-    .bg-mid-corp { background-color: rgba(147, 51, 234, 0.15) !important; color: #C084FC !important; border: 1px solid rgba(147, 51, 234, 0.25) !important; }
-    .bg-saramin { background-color: rgba(148, 163, 184, 0.15) !important; color: #94A3B8 !important; }
-    .bg-date { background-color: rgba(255, 255, 255, 0.05) !important; color: #E2E8F0 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; }
-    .bg-loc { background-color: rgba(255, 255, 255, 0.05) !important; color: #CBD5E1 !important; }
-    .bg-welfare { background-color: rgba(245, 158, 11, 0.12) !important; color: #FBBF24 !important; }
+    .bg-large-corp { background-color: rgba(59, 130, 246, 0.12) !important; color: #60A5FA !important; border: 1px solid rgba(59, 130, 246, 0.2) !important; }
+    .bg-mid-corp { background-color: rgba(147, 51, 234, 0.12) !important; color: #C084FC !important; border: 1px solid rgba(147, 51, 234, 0.2) !important; }
+    .bg-saramin { background-color: rgba(148, 163, 184, 0.12) !important; color: #94A3B8 !important; }
+    .bg-date { background-color: rgba(255, 255, 255, 0.04) !important; color: #CBD5E1 !important; border: 1px solid rgba(255, 255, 255, 0.06) !important; }
+    .bg-loc { background-color: rgba(255, 255, 255, 0.04) !important; color: #94A3B8 !important; }
+    .bg-welfare { background-color: rgba(245, 158, 11, 0.1) !important; color: #FBBF24 !important; }
+    .bg-jobplanet { background-color: rgba(255, 255, 255, 0.03) !important; color: #8A99AD !important; border: 1px solid rgba(255, 255, 255, 0.05) !important; }
     
-    /* 🏢 회사 및 공고 정보 폰트 위계 조정 */
+    /* 🏢 [색감 밸런싱 피드백] 완전 백색(#FFFFFF)을 지우고 피로감이 적은 소프트 화이트 매칭 */
     .company-title { 
         font-size: 1.35rem !important; 
         font-weight: 800 !important; 
-        color: #F8FAFC !important; 
-        margin-top: 4px !important;
+        color: #E2E8F0 !important; /* 눈의 피로감을 경감하는 오프화이트 */
+        margin-top: 2px !important;
         margin-bottom: 6px !important; 
-        letter-spacing: -0.02em !important;
-        line-height: 1.2 !important;
+        letter-spacing: -0.01em !important;
     }
     
+    /* 📄 [가시성 구분] 회사명 타이틀과 명확히 격리되도록 본문 정보 조도 톤다운 */
     .job-title { 
-        font-size: 0.98rem !important; 
+        font-size: 0.95rem !important; 
         font-weight: 500 !important;
-        color: #94A3B8 !important; 
+        color: #8A99AD !important; /* 텍스트 위계 차별화 유연 회색 변경 */
         margin-bottom: 0px !important; 
-        line-height: 1.45 !important; 
+        line-height: 1.4 !important; 
     }
     
-    /* 🚨 [핵심 패치] 모바일 화면(가로 768px 이하)일 때 버튼 및 레이아웃 자동 크기 최적화 */
     @media (max-width: 768px) {
         .company-title { font-size: 1.15rem !important; }
-        .job-title { font-size: 0.9rem !important; }
-        .platform-badge { font-size: 0.68rem !important; padding: 3px 6px !important; }
-    }
-
-    /* 라이트모드 스마트 안전장치 */
-    @media (prefers-color-scheme: light) {
-        .job-card-box { background: #FFFFFF !important; border: 1px solid #E2E8F0 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important; }
-        .company-title { color: #0F172A !important; }
-        .job-title { color: #475569 !important; }
-        .bg-date, .bg-loc { background-color: #F1F5F9 !important; color: #475569 !important; border: 1px solid #E2E8F0 !important; }
-        .bg-large-corp { background-color: #EFF6FF !important; color: #1D4ED8 !important; border: 1px solid #BFDBFE !important; }
-        .bg-mid-corp { background-color: #FDF4FF !important; color: #7E22CE !important; border: 1px solid #F5D0FE !important; }
+        .job-title { font-size: 0.88rem !important; }
     }
     
     button {
@@ -297,10 +286,10 @@ def fetch_target_blog_rss():
     return combined_feeds[:15]
 
 # ==========================================
-# 🏢 메인 UI 레이아웃 조립 
+# 🏢 [레이아웃 꼬임 완전 방지] 모바일 무조건 순차 노출 아키텍처
 # ==========================================
-st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px; color:#3B82F6;">통합 채용 정보 및 실시간 블로그 피드</div>', unsafe_allow_html=True)
-st.caption("모바일 2열 배치로 인한 카드 찌부러짐 버그를 원천 해결한 프리미엄 반응형 버전입니다.")
+st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px; color:#3B82F6;">통합 채용 공고 & 전문 블로그 실시간 피드</div>', unsafe_allow_html=True)
+st.caption("가로 열 분할 객체를 삭제하여 모바일 환경 찌부러짐 및 누락 버그를 원천 차단한 스크립트입니다.")
 
 # 사이드바 제어 패널
 st.sidebar.markdown("### 관제 설정 패널")
@@ -310,40 +299,39 @@ user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", va
 st.divider()
 
 # ------------------------------------------
-# 📰 [블로그 영역] 찌부러짐 원천 차단 스마트 컴포넌트 이식
+# 📰 [1영역] 지정 전문 블로그 추천 피드 (독립 루프)
 # ------------------------------------------
 st.markdown("### 📰 지정 전문 블로그 추천 피드")
 target_live_feed = fetch_target_blog_rss()
 
-# 🛠️ [해결책] 고정 2열 슬롯 대신 단독 카드로 하나씩 여유롭게 밀어내어 모바일 화면을 완벽하게 지원합니다.
+# ⚠️ 모바일 가로 제한 해소: st.columns 레이어 없이 수직 적층으로 직행 노출 처리
 for b_idx, b_job in enumerate(target_live_feed):
-    with st.container():
-        st.markdown(f"""
-        <div class="job-card-box">
-            <div>
-                <span class="platform-badge {b_job['badge_style']}">{b_job['corp_badge']}</span>
-                <span class="platform-badge bg-date">{b_job["date"]}</span>
-                <span class="platform-badge bg-loc">{b_job["deadline"]}</span>
-                <span class="platform-badge bg-jobplanet">★ {b_job["rating"]}</span>
-            </div>
-            <div class="company-title">{b_job["company"]}</div>
-            <div class="job-title">{b_job["position"]}</div>
+    st.markdown(f"""
+    <div class="job-card-box">
+        <div>
+            <span class="platform-badge {b_job['badge_style']}">{b_job['corp_badge']}</span>
+            <span class="platform-badge bg-date">{b_job["date"]}</span>
+            <span class="platform-badge bg-loc">{b_job["deadline"]}</span>
+            <span class="platform-badge bg-jobplanet">★ {b_job["rating"]}</span>
         </div>
-        """, unsafe_allow_html=True)
-        
-        b_col1, b_col2 = st.columns([1, 1])
-        with b_col1:
-            if st.button("⭐ 블로그 공고 스크랩", key=f"sb_blog_{b_idx}"):
-                save_to_db({"company": b_job["company"], "position": b_job["position"], "date": b_job["date"], "source": b_job["corp_badge"], "link": b_job["link"]})
-                st.toast("보관함에 저장되었습니다.")
-        with b_col2:
-            st.link_button("🌐 블로그 원본 보기", url=b_job['link'])
-        st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
+        <div class="company-title">{b_job["company"]}</div>
+        <div class="job-title">{b_job["position"]}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    b_col1, b_col2 = st.columns([1, 1])
+    with b_col1:
+        if st.button("⭐ 블로그 공고 스크랩", key=f"sb_blog_{b_idx}"):
+            save_to_db({"company": b_job["company"], "position": b_job["position"], "date": b_job["date"], "source": b_job["corp_badge"], "link": b_job["link"]})
+            st.toast("보관함에 저장되었습니다.")
+    with b_col2:
+        st.link_button("🌐 블로그 원본 보기", url=b_job['link'])
+    st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
 
 st.divider()
 
 # ------------------------------------------
-# 🔍 [사람인 영역] 실시간 검색 채용 리스트
+# 🔍 [2영역] 실시간 검색 채용 리스트 (독립 루프)
 # ------------------------------------------
 st.markdown("### 🔍 실시간 검색 채용 리스트")
 
