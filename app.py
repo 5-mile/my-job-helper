@@ -7,15 +7,15 @@ import re
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. 웹페이지 기본 설정 (모바일 호환성을 위해 wide 모드를 해제하거나 최적화)
+# 1. 웹페이지 기본 설정 (최상단 고정)
 st.set_page_config(
     page_title="통합 채용 정보 및 실시간 블로그 피드 시스템",
     page_icon="💼",
-    layout="centered" # 🔥 [대수정] wide에서 centered로 변경하여 모바일 찌부러짐 현상을 원천 차단합니다.
+    layout="wide"
 )
 
 # ==========================================
-# ✨ [UI/UX 디자인 쇄신] 눈부심 방지 조도 조절 및 가독성 박스 UI CSS
+# ✨ [가시성 대대적 보완] 눈부심 방지 조도 조절 및 칸 분리 박스 UI CSS
 # ==========================================
 st.markdown("""
 <style>
@@ -25,17 +25,22 @@ st.markdown("""
         font-family: 'Inter', 'Noto Sans KR', sans-serif !important; 
     }
     
-    /* 📱 [칸 분리 강화] 제목과 내용을 확실히 구획화하는 테두리 박스 모델 */
+    /* 📱 [패치] 공고와 공고 사이가 명확히 인지되도록 독립 박스 그리드 칸 분리 */
     .job-card-box {
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         border-radius: 12px !important;
-        padding: 16px !important;
-        background: rgba(255, 255, 255, 0.015) !important; 
-        margin-bottom: 10px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+        padding: 18px !important;
+        background: rgba(255, 255, 255, 0.02) !important; 
+        margin-bottom: 16px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    .job-card-box:hover {
+        border-color: #3B82F6 !important;
+        background: rgba(255, 255, 255, 0.04) !important; 
     }
     
-    /* 🏷️ 소프트 파스텔/무채색 뱃지 시스템 */
+    /* 🏷️ 정제된 플랫 스타일 뱃지 */
     .platform-badge { 
         display: inline-block; 
         padding: 4px 8px; 
@@ -46,32 +51,35 @@ st.markdown("""
         margin-bottom: 8px; 
     }
     
-    .bg-large-corp { background-color: rgba(59, 130, 246, 0.12) !important; color: #60A5FA !important; border: 1px solid rgba(59, 130, 246, 0.2) !important; }
-    .bg-mid-corp { background-color: rgba(147, 51, 234, 0.12) !important; color: #C084FC !important; border: 1px solid rgba(147, 51, 234, 0.2) !important; }
-    .bg-saramin { background-color: rgba(148, 163, 184, 0.12) !important; color: #94A3B8 !important; }
-    .bg-date { background-color: rgba(255, 255, 255, 0.04) !important; color: #CBD5E1 !important; border: 1px solid rgba(255, 255, 255, 0.06) !important; }
-    .bg-loc { background-color: rgba(255, 255, 255, 0.04) !important; color: #94A3B8 !important; }
-    .bg-welfare { background-color: rgba(245, 158, 11, 0.1) !important; color: #FBBF24 !important; }
+    .bg-large-corp { background-color: rgba(59, 130, 246, 0.15) !important; color: #60A5FA !important; border: 1px solid rgba(59, 130, 246, 0.25) !important; }
+    .bg-mid-corp { background-color: rgba(147, 51, 234, 0.15) !important; color: #C084FC !important; border: 1px solid rgba(147, 51, 234, 0.25) !important; }
+    .bg-saramin { background-color: rgba(148, 163, 184, 0.15) !important; color: #94A3B8 !important; }
+    .bg-blog { background-color: rgba(16, 185, 129, 0.12) !important; color: #34D399 !important; }
+    .bg-date { background-color: rgba(255, 255, 255, 0.05) !important; color: #E2E8F0 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; }
+    .bg-loc { background-color: rgba(255, 255, 255, 0.05) !important; color: #CBD5E1 !important; }
+    .bg-welfare { background-color: rgba(245, 158, 11, 0.12) !important; color: #FBBF24 !important; }
+    .bg-jobplanet { background-color: rgba(255, 255, 255, 0.04) !important; color: #94A3B8 !important; border: 1px solid rgba(255, 255, 255, 0.06) !important; }
     
-    /* 🏢 회사명 및 공고 정보 편안한 화이트-그레이 조도 매칭 */
+    /* 🏢 [색감 밸런싱 패치] 회사명은 완벽한 소프트 화이트 고수 */
     .company-title { 
-        font-size: 1.35rem !important; 
+        font-size: 1.4rem !important; 
         font-weight: 800 !important; 
-        color: #E2E8F0 !important; 
-        margin-top: 2px !important;
+        color: #F8FAFC !important; 
+        margin-top: 4px !important;
         margin-bottom: 6px !important; 
-        letter-spacing: -0.01em !important;
+        letter-spacing: -0.02em !important;
     }
     
+    /* 📄 [색감 밸런싱 패치] 공고 본문 내용은 톤 다운(슬레이트 회색)하여 눈의 피로 최소화 */
     .job-title { 
-        font-size: 0.95rem !important; 
+        font-size: 1.0rem !important; 
         font-weight: 500 !important;
-        color: #8A99AD !important; 
-        margin-bottom: 0px !important; 
-        line-height: 1.4 !important; 
+        color: #94A3B8 !important; /* 눈부심을 유발하던 #FFFFFF에서 부드러운 그레이로 톤 매칭 */
+        margin-bottom: 0px !important; /* 박스 내부 정렬을 위해 여백 조절 */
+        line-height: 1.45 !important; 
     }
     
-    /* 라이트모드 스마트 안전장치 */
+    /* 라이트모드 호환용 백업 라인 */
     @media (prefers-color-scheme: light) {
         .job-card-box { background: #FFFFFF !important; border: 1px solid #E2E8F0 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important; }
         .company-title { color: #0F172A !important; }
@@ -81,14 +89,12 @@ st.markdown("""
         .bg-mid-corp { background-color: #FDF4FF !important; color: #7E22CE !important; border: 1px solid #F5D0FE !important; }
     }
     
-    /* 버튼 스타일 전체 통일 및 찌부러짐 방지 공간 확보 */
-    button, .stButton, div[data-testid="stFormSubmitButton"] > button {
+    button {
         width: 100% !important;
         border-radius: 8px !important;
         font-size: 0.85rem !important;
         font-weight: 600 !important;
-        height: 42px !important;
-        display: block !important;
+        height: 40px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -210,15 +216,20 @@ def fetch_all_jobs_speed(keyword, sort_code, target_count=100):
     return classified_jobs
 
 # ==========================================
-# 🎯 지정 네이버 블로그 2곳 RSS 파싱 엔진
+# 🎯 지정 네이버 블로그 2곳 다이렉트 RSS 파싱 엔진
 # ==========================================
-@st.cache_data(ttl=120, show_spinner="전문 블로그 피드 데이터를 100% 정제하여 동기화 중입니다...")
+@st.cache_data(ttl=120, show_spinner="전문 블로그 피드 데이터를 정제 중입니다...")
 def fetch_target_blog_rss():
-    blog_ids = [{"id": "soonsoo5415"}, {"id": "dodam852"}]
+    blog_ids = [
+        {"id": "soonsoo5415"},
+        {"id": "dodam852"}
+    ]
+    
     months_map = {
         "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05", "Jun": "06",
         "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"
     }
+    
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     combined_feeds = []
     
@@ -286,51 +297,10 @@ def fetch_target_blog_rss():
     return combined_feeds[:15]
 
 # ==========================================
-# 🏢 [레이아웃 모바일 완전 동기화]
+# 🏢 메인 UI 레이아웃 조립
 # ==========================================
 st.markdown('<div style="font-size:1.6rem; font-weight:700; margin-bottom:2px; color:#3B82F6;">통합 채용 공고 & 전문 블로그 실시간 피드</div>', unsafe_allow_html=True)
-st.caption("모바일 브라우저 강제 쪼개짐 현상을 레이아웃 해체로 완벽히 잡은 최종 무결점 버전입니다.")
-
-# 사이드바 제어 패널
-st.sidebar.markdown("### 관제 설정 패널")
-min_rating = st.sidebar.slider("최소 잡플래닛 평점 커트라인", 1.0, 5.0, 2.0, step=0.1)
-user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", value="")
-
-st.divider()
-
-# ------------------------------------------
-# 📰 [1영역] 지정 전문 블로그 추천 피드 (세로형 무결점 빌드)
-# ------------------------------------------
-st.markdown("### 📰 지정 전문 블로그 추천 피드")
-target_live_feed = fetch_target_blog_rss()
-
-for b_idx, b_job in enumerate(target_live_feed):
-    st.markdown(f"""
-    <div class="job-card-box">
-        <div>
-            <span class="platform-badge {b_job['badge_style']}">{b_job['corp_badge']}</span>
-            <span class="platform-badge bg-date">{b_job["date"]}</span>
-            <span class="platform-badge bg-loc">{b_job["deadline"]}</span>
-            <span class="platform-badge bg-jobplanet">★ {b_job["rating"]}</span>
-        </div>
-        <div class="company-title">{b_job["company"]}</div>
-        <div class="job-title">{b_job["position"]}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 🔥 [모바일 버그 완전 수정] 버튼도 가로 분할을 싹 빼고 1줄에 1개씩 안정적으로 떨어지게 수정하여 찌부러짐을 완벽 방어합니다.
-    if st.button("⭐ 블로그 공고 스크랩", key=f"sb_blog_{b_idx}"):
-        save_to_db({"company": b_job["company"], "position": b_job["position"], "date": b_job["date"], "source": b_job["corp_badge"], "link": b_job["link"]})
-        st.toast("보관함에 저장되었습니다.")
-    st.link_button("🌐 원본 블로그 소식 보기", url=b_job['link'])
-    st.markdown('<div style="margin-bottom:18px;"></div>', unsafe_allow_html=True)
-
-st.divider()
-
-# ------------------------------------------
-# 🔍 [2영역] 실시간 검색 채용 리스트 (세로형 무결점 빌드)
-# ------------------------------------------
-st.markdown("### 🔍 실시간 검색 채용 리스트")
+st.caption("텍스트 색감 조절 및 개별 칸 분리 컴포넌트를 이식한 가시성 최적화 대시보드입니다.")
 
 search_keyword = st.text_input("공고 검색어 입력", value="생산")
 sort_display = st.selectbox("리스트 정렬 조건 선택", ["인기순 (조회수 기준)", "최근 등록일순", "마감일순 (임박 공고 우선)"])
@@ -339,55 +309,104 @@ if "인기순" in sort_display: sort_code = "rc"
 elif "최근 등록일순" in sort_display: sort_code = "rd"
 else: sort_code = "pa"
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["대기업", "중견기업", "외국계", "일반/기타", "보관함"])
+st.divider()
 
-if search_keyword.strip():
-    job_data = fetch_all_jobs_speed(search_keyword, sort_code, target_count=100)
-else: job_data = None
+# 사이드바 제어 패널
+st.sidebar.markdown("### 관제 설정 패널")
+min_rating = st.sidebar.slider("최소 잡플래닛 평점 커트라인", 1.0, 5.0, 2.0, step=0.1)
+user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", value="")
 
-cats = [("대기업", tab1), ("중견기업", tab2), ("외국계", tab3), ("일반/기타기업", tab4)]
+col1, col2 = st.columns([1.1, 1])
 
-for c_name, t_obj in cats:
-    with t_obj:
-        if not job_data:
-            st.info("💡 위의 '공고 검색어 입력' 칸에 검색어를 타이핑하시면 실시간 사람인 데이터가 정렬됩니다.")
-        elif not job_data[c_name]:
-            st.info("조건에 부합하는 채용 공고가 없습니다.")
-        else:
-            if user_location.strip():
-                sorted_jobs = sorted(job_data[c_name], key=lambda x: user_location in x.get('location', ''), reverse=True)
-            else: sorted_jobs = job_data[c_name]
-                
-            for idx, job in enumerate(sorted_jobs):
-                if job['rating'] < min_rating: continue
-                
-                st.markdown(f"""
-                <div class="job-card-box">
-                    <div>
-                        <span class="platform-badge bg-date">⏳ {job["date"]}</span>
-                        <span class="platform-badge bg-saramin">사람인</span>
-                        <span class="platform-badge bg-loc">📍 {job["location"]}</span>
-                        <span class="platform-badge bg-jobplanet">★ {job["rating"]}</span>
+# ------------------------------------------
+# 📋 [좌측] 실시간 검색 채용 리스트 (독립 카드 박스화)
+# ------------------------------------------
+with col1:
+    st.markdown("#### 실시간 검색 채용 리스트")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["대기업", "중견기업", "외국계", "일반/기타", "보관함"])
+    
+    if search_keyword.strip():
+        job_data = fetch_all_jobs_speed(search_keyword, sort_code, target_count=100)
+    else: job_data = None
+
+    cats = [("대기업", tab1), ("중견기업", tab2), ("외국계", tab3), ("일반/기타기업", tab4)]
+    
+    for c_name, t_obj in cats:
+        with t_obj:
+            if not job_data:
+                st.info("💡 '공고 검색어 입력' 칸에 검색어를 타이핑하시면 실시간 사람인 데이터가 정렬됩니다.")
+            elif not job_data[c_name]:
+                st.info("조건에 부합하는 채용 공고가 없습니다.")
+            else:
+                if user_location.strip():
+                    sorted_jobs = sorted(job_data[c_name], key=lambda x: user_location in x.get('location', ''), reverse=True)
+                else: sorted_jobs = job_data[c_name]
+                    
+                for idx, job in enumerate(sorted_jobs):
+                    if job['rating'] < min_rating: continue
+                    
+                    # 🛠️ [가시성 패치 개편] 개별 수집 공고를 .job-card-box 감싸서 명확히 분리 격리함
+                    st.markdown(f"""
+                    <div class="job-card-box">
+                        <div>
+                            <span class="platform-badge bg-date">⏳ {job["date"]}</span>
+                            <span class="platform-badge bg-saramin">사람인</span>
+                            <span class="platform-badge bg-loc">📍 {job["location"]}</span>
+                            <span class="platform-badge bg-jobplanet">★ {job["rating"]}</span>
+                        </div>
+                        <div class="company-title">{job["company"]}</div>
+                        <div class="job-title">{job["position"]}</div>
                     </div>
-                    <div class="company-title">{job["company"]}</div>
-                    <div class="job-title">{job["position"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # 🔥 사람인 버튼도 찌부러짐 현상 차단 완료
-                if st.button("⭐ 공고 스크랩", key=f"s_{c_name}_{idx}"):
-                    save_to_db(job)
-                    st.toast("보관함에 저장되었습니다.")
-                st.link_button("🌐 채용 공고 상세보기", url=job['link'])
-                st.markdown('<div style="margin-bottom:18px;"></div>', unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+                    
+                    # 버튼은 사용성 유지를 위해 카드 박스 바로 하단에 컴팩트 정렬 배치
+                    btn_c1, btn_c2 = st.columns([1, 1])
+                    with btn_c1:
+                        if st.button("⭐ 공고 스크랩", key=f"s_{c_name}_{idx}"):
+                            save_to_db(job)
+                            st.toast("보관함에 저장되었습니다.")
+                    with btn_c2: st.link_button("🌐 공고 상세보기", url=job['link'])
+                    st.markdown('<div style="margin-bottom:20px;"></div>', unsafe_allow_html=True)
 
-with tab5:
-    db_jobs = load_from_db()
-    if not db_jobs: st.write("보관함이 비어있습니다.")
-    else:
-        for s_idx, s_job in enumerate(db_jobs):
-            with st.container():
-                st.markdown(f'<div style="margin-bottom:4px;"><span class="platform-badge bg-date">{s_job["date"]}</span></div><div class="company-title">{s_job["company"]}</div><div class="job-title">{s_job["position"]}</div>', unsafe_allow_html=True)
-                if st.button("❌ 스크랩 취소", key=f"sd_{s_idx}"):
-                    delete_from_db(s_job)
-                    st.rerun()
+    with tab5:
+        db_jobs = load_from_db()
+        if not db_jobs: st.write("보관함이 비어있습니다.")
+        else:
+            for s_idx, s_job in enumerate(db_jobs):
+                with st.container():
+                    st.markdown(f'<div style="margin-bottom:4px;"><span class="platform-badge bg-date">{s_job["date"]}</span></div><div class="company-title">{s_job["company"]}</div><div class="job-title">{s_job["position"]}</div>', unsafe_allow_html=True)
+                    if st.button("❌ 스크랩 취소", key=f"sd_{s_idx}"):
+                        delete_from_db(s_job)
+                        st.rerun()
+
+# ------------------------------------------
+# 📰 [우측] 지정 전문 블로그 추천 피드 (독립 카드 박스화)
+# ------------------------------------------
+with col2:
+    st.markdown("#### 지정 전문 블로그 추천 피드")
+    
+    target_live_feed = fetch_target_blog_rss()
+    
+    for b_idx, b_job in enumerate(target_live_feed):
+        # 🛠️ 우측 블로그 카드 역시 동일한 위계의 .job-card-box 구조로 변경하여 시인성 확보
+        st.markdown(f"""
+        <div class="job-card-box">
+            <div>
+                <span class="platform-badge {b_job['badge_style']}">{b_job['corp_badge']}</span>
+                <span class="platform-badge bg-date">{b_job["date"]}</span>
+                <span class="platform-badge bg-loc">{b_job["deadline"]}</span>
+                <span class="platform-badge bg-jobplanet">★ {b_job["rating"]}</span>
+            </div>
+            <div class="company-title">{b_job["company"]}</div>
+            <div class="job-title">{b_job["position"]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        b_col1, b_col2 = st.columns([1, 1])
+        with b_col1:
+            if st.button("⭐ 블로그 공고 스크랩", key=f"sb_blog_{b_idx}"):
+                save_to_db({"company": b_job["company"], "position": b_job["position"], "date": b_job["date"], "source": b_job["corp_badge"], "link": b_job["link"]})
+                st.toast("보관함에 저장되었습니다.")
+        with b_col2:
+            st.link_button("🌐 블로그 원본 보기", url=b_job['link'])
+        st.markdown('<div style="margin-bottom:20px;"></div>', unsafe_allow_html=True)
