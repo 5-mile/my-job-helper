@@ -112,7 +112,7 @@ def _parse_item(item) -> dict[str, Any] | None:
 
     category = detect_tier(raw_title)
     is_large = category == "대기업"
-    welfares, rating = analyze(company, raw_title)
+    welfares = analyze(company, raw_title)
 
     return {
         "source": "블로그",
@@ -129,7 +129,6 @@ def _parse_item(item) -> dict[str, Any] | None:
         "link": link,
         "location": "",
         "welfares": welfares,
-        "rating": rating,
     }
 
 

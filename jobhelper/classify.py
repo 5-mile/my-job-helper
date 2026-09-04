@@ -36,27 +36,11 @@ def extract_welfares(*texts: str) -> list[str]:
     return found
 
 
-def estimate_rating(company: str) -> float:
-    """회사 규모대별 참고용 점수(1.0~5.0).
+def analyze(company: str, position: str = "") -> list[str]:
+    """공고에서 뽑아낸 복지 라벨 목록.
 
-    실제 잡플래닛 평점이 아니라, 회사명 해시를 이용해 규모대별 밴드 안에서
-    일정하게 재현되는 **추정치**다. 정렬/필터링의 보조 지표로만 쓴다.
+    예전 버전에는 회사명 해시로 만든 가짜 '잡플래닛 추정 평점'이 함께 있었지만,
+    실제 평판과 무관한 값이라 제거했다. 회사 규모·보수는 국민연금 실데이터를
+    쓰는 ``jobhelper.company_info`` 를 참고한다.
     """
-    if not company:
-        return 3.0
-    hash_val = sum(ord(ch) for ch in company)
-    tier = classify_company(company)
-    if tier == "대기업":
-        base, span = 3.6, 5
-    elif tier == "외국계":
-        base, span = 3.4, 6
-    elif tier == "중견기업":
-        base, span = 2.8, 6
-    else:
-        base, span = 2.3, 7
-    return round(min(5.0, base + (hash_val % span) * 0.1), 1)
-
-
-def analyze(company: str, position: str = "") -> tuple[list[str], float]:
-    """복지 라벨과 추정 평점을 한 번에 반환한다."""
-    return extract_welfares(company, position), estimate_rating(company)
+    return extract_welfares(company, position)

@@ -49,6 +49,7 @@ CSS = """
     .bg-jobplanet  { background-color: rgba(255, 255, 255, 0.04); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.06); }
     .bg-urgent     { background-color: rgba(248, 113, 113, 0.18); color: #FCA5A5; border: 1px solid rgba(248, 113, 113, 0.3); }
     .bg-new        { background-color: rgba(52, 211, 153, 0.18); color: #6EE7B7; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .bg-nps        { background-color: rgba(56, 189, 248, 0.14); color: #7DD3FC; border: 1px solid rgba(56, 189, 248, 0.28); }
 
     .company-title {
         font-size: 1.35rem;
@@ -78,6 +79,7 @@ CSS = """
         .bg-large-corp { background-color: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
         .bg-mid-corp   { background-color: #FDF4FF; color: #7E22CE; border: 1px solid #F5D0FE; }
         .bg-foreign    { background-color: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4; }
+        .bg-nps        { background-color: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }
     }
 
     div[data-testid="stHorizontalBlock"] button {
@@ -100,6 +102,34 @@ def status_pill(status: str) -> str:
         f'<span class="platform-badge" style="background:{color}22;color:{color};'
         f'border:1px solid {color}55;">{escape(status)}</span>'
     )
+
+
+def company_badges(job: dict[str, Any]) -> list[str]:
+    """국민연금 실데이터 기반 회사 규모·보수 뱃지.
+
+    인증키가 없거나 조회되지 않은 회사는 아무 뱃지도 붙이지 않는다.
+    (예전의 해시 기반 가짜 별점을 대신한다.)
+    """
+    info = job.get("company_info")
+    if not info or not info.get("found"):
+        return []
+
+    badges = []
+    employees = info.get("employees")
+    if employees:
+        badges.append(badge(f"👥 {employees:,}명", "bg-nps"))
+
+    pay = info.get("avg_monthly_pay")
+    if pay:
+        man = round(pay / 10_000)
+        suffix = "+" if pay >= 6_370_000 * 0.95 else ""
+        badges.append(badge(f"💰 월평균 {man:,}만{suffix}", "bg-nps"))
+
+    joined, left = info.get("joined_this_month"), info.get("left_this_month")
+    if joined is not None and left is not None and (joined or left):
+        badges.append(badge(f"🔄 입{joined}/퇴{left}", "bg-loc"))
+
+    return badges
 
 
 def job_card(
@@ -129,7 +159,9 @@ def job_card(
         badges.append(badge(f"👔 {job['career']}", "bg-loc"))
     if job.get("employment"):
         badges.append(badge(job["employment"], "bg-loc"))
-    badges.append(badge(f"★ {job.get('rating', 3.0)} (추정)", "bg-jobplanet"))
+    if job.get("salary"):
+        badges.append(badge(f"💵 {job['salary']}", "bg-welfare"))
+    badges.extend(company_badges(job))
     for welfare in (job.get("welfares") or [])[:3]:
         badges.append(badge(welfare, "bg-welfare"))
     if is_saved:
@@ -156,7 +188,7 @@ def blog_card(item: dict[str, Any], *, is_new: bool = False, is_saved: bool = Fa
     badges.append(badge(item.get("corp_badge", ""), item.get("badge_style", "bg-mid-corp")))
     badges.append(badge(item.get("date", ""), "bg-date"))
     badges.append(badge(item.get("dday", ""), "bg-loc"))
-    badges.append(badge(f"★ {item.get('rating', 3.0)} (추정)", "bg-jobplanet"))
+    badges.extend(company_badges(item))
     if is_saved:
         badges.append(badge("보관함에 있음", "bg-blog"))
 

@@ -9,7 +9,7 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jobhelper import db  # noqa: E402
-from jobhelper.classify import classify_company, estimate_rating, extract_welfares  # noqa: E402
+from jobhelper.classify import analyze, classify_company, extract_welfares  # noqa: E402
 from jobhelper.dates import days_left, format_dday, parse_deadline, parse_rss_date  # noqa: E402
 from jobhelper.scrapers.naver_blog import _clean_title  # noqa: E402
 from jobhelper.ui import job_card  # noqa: E402
@@ -34,10 +34,11 @@ def test_classify_default():
     assert classify_company("가나다상사", "사무보조") == "일반/기타기업"
 
 
-def test_rating_is_stable_and_in_range():
-    first = estimate_rating("삼성전자")
-    assert first == estimate_rating("삼성전자")
-    assert 1.0 <= first <= 5.0
+def test_analyze_returns_welfare_labels_only():
+    """가짜 해시 별점은 제거되었고 복지 라벨만 남는다."""
+    result = analyze("삼성전자", "기숙사 제공 생산직")
+    assert isinstance(result, list)
+    assert "🚌 기숙사/교통" in result
 
 
 def test_extract_welfares():
@@ -98,7 +99,6 @@ def _sample(company="테스트기업", position="생산직 채용"):
         "link": "https://example.com/1",
         "location": "경기 화성시",
         "category": "일반/기타기업",
-        "rating": 3.1,
         "welfares": ["🍔 식사제공"],
         "deadline": "2026-09-14",
     }

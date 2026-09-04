@@ -8,3 +8,6 @@ env/
 .streamlit/secrets.toml
 .pytest_cache/
 .DS_Store
+
+# 로컬 설정
+.env
