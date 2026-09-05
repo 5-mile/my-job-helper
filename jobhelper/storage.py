@@ -43,6 +43,17 @@ def database_url() -> str | None:
     return settings.get("DATABASE_URL")
 
 
+PASSWORD_PLACEHOLDERS = ("[YOUR-PASSWORD]", "[your-password]", "비밀번호")
+
+
+def url_needs_password(url: str | None = None) -> bool:
+    """접속 문자열에 비밀번호 자리표시자가 그대로 남아 있는지."""
+    url = url if url is not None else database_url()
+    if not url:
+        return False
+    return any(p in url for p in PASSWORD_PLACEHOLDERS)
+
+
 def is_postgres() -> bool:
     return bool(database_url())
 
@@ -124,8 +135,22 @@ def _connect_postgres():
     if _pg_conn is not None and not _pg_conn.closed:
         return _pg_conn
 
+    url = database_url()
+    if url_needs_password(url):
+        raise RuntimeError(
+            "DATABASE_URL의 [YOUR-PASSWORD] 자리가 아직 실제 비밀번호로 "
+            "바뀌지 않았습니다. .env 파일을 확인하세요."
+        )
+
+    # prepare_threshold=None: Supabase transaction pooler(6543)는 prepared
+    # statement를 지원하지 않는다. session pooler/직접 연결에서는 영향이 없으므로
+    # 어느 쪽을 쓰든 동작하도록 꺼 둔다.
     _pg_conn = psycopg.connect(
-        database_url(), row_factory=dict_row, autocommit=False, connect_timeout=10
+        url,
+        row_factory=dict_row,
+        autocommit=False,
+        connect_timeout=10,
+        prepare_threshold=None,
     )
     return _pg_conn
 

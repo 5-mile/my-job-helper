@@ -363,3 +363,19 @@ def test_setup_cloud_handles_missing_source(tmp_path, monkeypatch, capsys):
 
     assert setup_cloud.main() == 0
     assert "이전은 건너뜁니다" in capsys.readouterr().out
+
+
+def test_setup_cloud_stops_on_password_placeholder(monkeypatch, capsys):
+    """[YOUR-PASSWORD]가 남아 있으면 연결을 시도하지 않고 안내한다."""
+    import setup_cloud
+
+    monkeypatch.setattr(
+        storage, "database_url",
+        lambda: "postgresql://postgres.abc:[YOUR-PASSWORD]@aws-0-x.pooler.supabase.com:5432/postgres",
+    )
+    monkeypatch.setattr(sys, "argv", ["setup_cloud.py"])
+
+    assert setup_cloud.main() == 1
+    err = capsys.readouterr().err
+    assert "비밀번호가 아직 채워지지 않았습니다" in err
+    assert "Reset database password" in err

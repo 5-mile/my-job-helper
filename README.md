@@ -51,11 +51,19 @@ Streamlit Cloud에 배포했다면 이야기가 다릅니다. 클라우드는 �
 
 Supabase 무료 플랜 기준:
 
-1. <https://supabase.com> 에서 프로젝트 생성
-2. **Project Settings → Database → Connection string → URI** 복사
-3. `[YOUR-PASSWORD]` 자리를 실제 비밀번호로 교체
-4. 로컬 `.env`에 `DATABASE_URL=postgresql://...` 로 한 줄 넣습니다.
-5. 나머지는 아래 한 번의 명령이 처리합니다:
+1. <https://supabase.com/dashboard> 에서 프로젝트 생성
+2. 상단 가운데 초록색 **[Connect]** 버튼 → **Direct Connection string** 탭
+3. Connection Method에서 **Session pooler** 선택 (아래 설명 참고), Type은 URI
+4. 표시된 문자열의 `[YOUR-PASSWORD]` 자리를 Database Password로 교체
+
+> **Session pooler를 골라야 하는 이유** — 기본값인 Direct connection은
+> IPv6 전용입니다. Streamlit Cloud는 IPv4라 연결이 되지 않습니다.
+> Session pooler는 IPv4로 프록시되고(무료), 연결을 오래 유지하는 이 앱의
+> 사용 방식과도 맞습니다. Transaction pooler(6543)도 IPv4지만 prepared
+> statement를 지원하지 않으므로 Session pooler(5432)를 권합니다.
+> (코드에서는 `prepare_threshold=None`으로 두 경우 모두 동작하게 해두었습니다.)
+5. 로컬 `.env`에 `DATABASE_URL=postgresql://...` 로 한 줄 넣습니다.
+6. 나머지는 아래 한 번의 명령이 처리합니다:
 
 ```bash
 python setup_cloud.py
@@ -159,7 +167,7 @@ python migrate_db.py --overwrite        # 대상에 이미 있는 공고도 덮�
 pytest tests -q
 ```
 
-네트워크 없이 도는 86개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+네트워크 없이 도는 92개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
 sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
 (Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
@@ -187,7 +195,7 @@ jobhelper/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 86개
+tests/                       테스트 92개
 ```
 
 ## 데이터 저장 위치

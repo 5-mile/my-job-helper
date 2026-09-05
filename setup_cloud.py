@@ -34,12 +34,15 @@ def _mask(url: str) -> str:
 
 def _print_missing_url_guide() -> None:
     print("DATABASE_URL이 없습니다. 아래 순서로 준비해 주세요.\n")
-    print("1. https://supabase.com 에서 로그인 후 새 프로젝트를 만듭니다.")
-    print("   (프로젝트를 만들 때 정한 Database Password를 기억해 두세요.)")
-    print("2. 좌측 하단 ⚙ Project Settings → Database 로 들어갑니다.")
-    print("3. 'Connection string' 항목에서 URI 탭의 문자열을 복사합니다.")
-    print("   postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres")
-    print("4. [YOUR-PASSWORD] 자리를 1번에서 정한 실제 비밀번호로 바꿉니다.")
+    print("1. https://supabase.com/dashboard 에서 프로젝트를 엽니다.")
+    print("2. 상단 가운데의 초록색 [Connect] 버튼을 누릅니다.")
+    print("3. 'Direct Connection string' 탭을 고릅니다.")
+    print("4. Connection Method에서 반드시 'Session pooler'를 고릅니다.")
+    print("   (Direct connection은 IPv6 전용이라 Streamlit Cloud에서 연결되지 않습니다.)")
+    print("5. Type을 URI로 두고 문자열을 복사합니다.")
+    print("   postgresql://postgres.프로젝트ID:[YOUR-PASSWORD]@aws-0-...pooler.supabase.com:5432/postgres")
+    print("6. [YOUR-PASSWORD] 자리를 프로젝트 생성 시 정한 Database Password로 바꿉니다.")
+    print("   (잊었다면 같은 화면의 'Reset database password'로 재설정)")
     print(f"\n5. 이 폴더의 .env 파일에 아래 한 줄을 넣습니다:\n\n   {ENV_TEMPLATE}\n")
 
     env_path = settings.ENV_FILE
@@ -134,6 +137,19 @@ def main() -> int:
     url = storage.database_url()
     if not url:
         _print_missing_url_guide()
+        return 1
+    if storage.url_needs_password(url):
+        print("[1/4] DATABASE_URL ❌  비밀번호가 아직 채워지지 않았습니다.", file=sys.stderr)
+        print(file=sys.stderr)
+        print(f"   {settings.ENV_FILE} 를 열어", file=sys.stderr)
+        print("   DATABASE_URL 줄의 [YOUR-PASSWORD] 부분을", file=sys.stderr)
+        print("   실제 Database Password로 바꾼 뒤 다시 실행하세요.", file=sys.stderr)
+        print(file=sys.stderr)
+        print("   비밀번호를 잊었다면 Supabase 대시보드 → Connect →", file=sys.stderr)
+        print("   Session pooler → 'Reset database password' 에서 재설정할 수 있습니다.",
+              file=sys.stderr)
+        print("   비밀번호에 @ : / ? # 같은 문자가 있으면 percent-encoding이 필요합니다.",
+              file=sys.stderr)
         return 1
     print(f"[1/4] DATABASE_URL 확인 ✅  {_mask(url)}")
 

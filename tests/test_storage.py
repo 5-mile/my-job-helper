@@ -298,3 +298,25 @@ def test_health_check_reports_sqlite(tmp_path, monkeypatch):
     ok, message = storage.health_check()
     assert ok is True
     assert "SQLite" in message
+
+
+# ==========================================
+# 비밀번호 자리표시자 감지
+# ==========================================
+@pytest.mark.parametrize("url", [
+    "postgresql://postgres.abc:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres:[your-password]@db.x.supabase.co:5432/postgres",
+    "postgresql://postgres:비밀번호@db.x.supabase.co:5432/postgres",
+])
+def test_url_needs_password_detects_placeholder(url):
+    assert storage.url_needs_password(url) is True
+
+
+def test_url_needs_password_false_for_real_password():
+    real = "postgresql://postgres.abc:s3cr3t@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    assert storage.url_needs_password(real) is False
+
+
+def test_url_needs_password_false_when_unset(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    assert storage.url_needs_password() is False
