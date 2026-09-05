@@ -2,3 +2,4 @@ streamlit>=1.36
 requests>=2.31
 beautifulsoup4>=4.12
 lxml>=5.2
+psycopg[binary]>=3.1

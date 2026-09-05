@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import re
-import sqlite3
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict
 from typing import Any
@@ -22,7 +21,7 @@ import requests
 
 from . import settings
 from .config import REQUEST_TIMEOUT
-from .db import connect
+from .storage import connect, upsert
 from .dates import now_iso
 
 log = logging.getLogger(__name__)
@@ -116,7 +115,7 @@ def _read_cache(company: str, db_path: str | None = None) -> CompanyInfo | None:
             row = conn.execute(
                 "SELECT * FROM company_info_cache WHERE company = ?", (company,)
             ).fetchone()
-    except sqlite3.Error as exc:
+    except Exception as exc:
         log.warning("회사 정보 캐시 조회 실패: %s", exc)
         return None
     if not row:
@@ -137,12 +136,13 @@ def _write_cache(info: CompanyInfo, db_path: str | None = None) -> None:
     try:
         with connect(db_path) as conn:
             conn.execute(
-                """
-                INSERT OR REPLACE INTO company_info_cache
-                    (company, employees, avg_monthly_pay, address, joined_this_month,
-                     left_this_month, data_month, found, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                upsert(
+                    "company_info_cache",
+                    ["company", "employees", "avg_monthly_pay", "address",
+                     "joined_this_month", "left_this_month", "data_month",
+                     "found", "fetched_at"],
+                    ["company"],
+                ),
                 (
                     info.name,
                     info.employees,
@@ -155,7 +155,7 @@ def _write_cache(info: CompanyInfo, db_path: str | None = None) -> None:
                     now_iso(),
                 ),
             )
-    except sqlite3.Error as exc:
+    except Exception as exc:
         log.warning("회사 정보 캐시 저장 실패: %s", exc)
 
 

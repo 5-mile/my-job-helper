@@ -8,7 +8,7 @@ from datetime import date
 
 import streamlit as st
 
-from jobhelper import company_info, db, notify, settings, ui
+from jobhelper import company_info, db, notify, settings, storage, ui
 from jobhelper.config import (
     APPLICATION_STATUSES,
     CATEGORIES,
@@ -104,6 +104,15 @@ blog_limit = st.sidebar.slider("피드 개수", 5, 40, 15)
 if st.sidebar.button("🔄 캐시 비우고 새로 수집"):
     st.cache_data.clear()
     st.rerun()
+
+st.sidebar.markdown("### 💾 저장소")
+if storage.is_postgres():
+    st.sidebar.success(f"{storage.backend_name()} · 보관함이 영구 저장됩니다")
+else:
+    st.sidebar.info(
+        "SQLite (로컬 파일) — Streamlit Cloud에 배포한 경우 재시작 때마다 "
+        "보관함이 초기화됩니다. `DATABASE_URL`을 설정하면 영구 저장됩니다."
+    )
 
 missing = settings.missing_keys()
 if missing:

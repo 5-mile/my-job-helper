@@ -19,6 +19,7 @@
 | 메모 · 지원일 | 공고별로 자소서 소재, 면접 일정 등을 기록 |
 | CSV 내보내기 | 보관함 전체를 엑셀에서 열 수 있는 CSV로 저장 |
 | 수집 상태 감지 | 사람인 페이지 구조가 바뀌어 0건이 되면 경고 배너로 알림 |
+| 보관함 영구 저장 | 로컬은 SQLite, 클라우드 배포 시 PostgreSQL로 데이터 유지 |
 
 ## 실행 방법
 
@@ -40,7 +41,39 @@ streamlit run app.py
 cp .env.example .env
 ```
 
-### 1. 회사 규모·보수 정보 — `NPS_SERVICE_KEY`
+### 1. 보관함 영구 저장 — `DATABASE_URL`
+
+**로컬에서만 쓰신다면 설정할 필요가 없습니다.** 기본값인 SQLite(`jobs.db`)로 잘 동작합니다.
+
+Streamlit Cloud에 배포했다면 이야기가 다릅니다. 클라우드는 파일시스템이 휘발성이라
+앱이 재시작하거나 절전에서 깨어날 때마다 `jobs.db`가 사라집니다. 지원 현황과 메모를
+유지하려면 외부 PostgreSQL이 필요합니다.
+
+Supabase 무료 플랜 기준:
+
+1. <https://supabase.com> 에서 프로젝트 생성
+2. **Project Settings → Database → Connection string → URI** 복사
+3. `[YOUR-PASSWORD]` 자리를 실제 비밀번호로 교체
+4. 로컬 `.env`에 `DATABASE_URL=postgresql://...` 로 넣고 연결 확인:
+
+```bash
+python check_db.py
+```
+
+테이블 생성 → 저장 → 수정 → 삭제까지 한 바퀴 돌려보고 각 단계를 체크해 줍니다.
+
+5. Streamlit Cloud에서는 **Manage app → Settings → Secrets** 에 같은 값을 넣습니다:
+
+```toml
+DATABASE_URL = "postgresql://postgres:비밀번호@db.xxxxx.supabase.co:5432/postgres"
+```
+
+설정되면 사이드바 "💾 저장소"에 `PostgreSQL · 보관함이 영구 저장됩니다`가 표시됩니다.
+
+> 로컬 SQLite에 이미 쌓아둔 보관함이 있다면 Postgres로 자동 이전되지는 않습니다.
+> 옮기려면 SQLite 상태에서 CSV로 내려받은 뒤, Postgres로 전환하고 다시 스크랩하세요.
+
+### 2. 회사 규모·보수 정보 — `NPS_SERVICE_KEY`
 
 1. [공공데이터포털](https://www.data.go.kr)에서 **국민연금공단_국민연금 가입 사업장 내역** 활용신청
 2. 마이페이지 → 인증키의 **일반 인증키(Decoding)** 값을 `.env`에 입력
@@ -53,13 +86,13 @@ cp .env.example .env
 > 고연봉 회사는 기준소득월액 상한(월 637만원) 때문에 실제보다 낮게 나옵니다.
 > 상한에 걸린 경우 `380만+` 처럼 `+`를 붙여 표시합니다.
 
-### 2. 워크넷 공고 — `WORKNET_AUTH_KEY`
+### 3. 워크넷 공고 — `WORKNET_AUTH_KEY`
 
 [워크넷 오픈API](https://openapi.work.go.kr)에서 채용정보 API 인증키를 발급받아 입력하면,
 사이드바의 "워크넷 공고 함께 보기"가 활성화됩니다. 공식 API라 사람인 스크래핑과 달리
 사이트 개편에 영향을 받지 않습니다.
 
-### 3. 마감 임박 알림 — 텔레그램 또는 이메일
+### 4. 마감 임박 알림 — 텔레그램 또는 이메일
 
 **텔레그램** (권장, 설정이 더 간단합니다)
 
@@ -97,7 +130,9 @@ python notify.py --days 5     # 5일 이내로 넓히기
 pytest tests -q
 ```
 
-네트워크 없이 도는 49개 테스트입니다. GitHub Actions로 push마다 자동 실행됩니다
+네트워크 없이 도는 66개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
+(Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
 
 ## 프로젝트 구조
@@ -105,28 +140,48 @@ pytest tests -q
 ```
 app.py                       Streamlit UI (진입점)
 notify.py                    마감 알림 실행 스크립트 (스케줄러용)
+check_db.py                  저장소 연결 점검 스크립트
 jobhelper/
   config.py                  기업 분류 사전, 상태 목록, 상수
   settings.py                API 키·알림 설정 로딩 (환경변수 > .env > st.secrets)
+  storage.py                 SQLite/PostgreSQL 공통 저장소 계층
   classify.py                대기업/중견/외국계 분류, 복지 키워드
   company_info.py            국민연금 사업장 데이터 조회 및 캐시
   dates.py                   마감일 파싱과 D-Day 계산
-  db.py                      SQLite 보관함 + 지원 현황 (구버전 DB 자동 마이그레이션)
+  db.py                      보관함 + 지원 현황 (구버전 DB 자동 마이그레이션)
   notify.py                  마감 임박 공고 탐색과 텔레그램/이메일 발송
   ui.py                      CSS와 카드 렌더링 (HTML 이스케이프 포함)
   scrapers/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 49개
+tests/                       테스트 66개
 ```
 
 ## 데이터 저장 위치
 
-스크랩 내역은 프로젝트 루트의 `jobs.db`(SQLite)에 저장됩니다.
+`DATABASE_URL`이 없으면 프로젝트 루트의 `jobs.db`(SQLite)에 저장됩니다.
 `JOB_HELPER_DB` 환경 변수로 경로를 바꿀 수 있습니다.
 
 기존 버전에서 쓰던 `jobs.db`가 있어도 **데이터를 잃지 않고** 새 컬럼만 추가되어 그대로 열립니다.
+
+## Streamlit Cloud 배포 시 주의사항
+
+**1. 코드를 푸시한 뒤에는 앱을 재시작(Reboot)하세요.**
+Streamlit Cloud는 새 커밋을 받아도 이미 메모리에 올라간 파이썬 모듈을 재사용하는
+경우가 있습니다. 이때 새 `app.py`가 옛 모듈을 호출하면서
+`ImportError: cannot import name ...` 이 납니다.
+**Manage app → ⋮ → Reboot app** 으로 프로세스를 새로 띄우면 해결됩니다.
+
+**2. `DATABASE_URL`을 설정하세요.** 없으면 재시작 때마다 보관함이 비워집니다 (위 참고).
+
+**3. 사람인 수집이 0건일 수 있습니다.** 클라우드 데이터센터 IP가 차단되는 경우가
+있습니다. 화면 상단에 경고 배너가 뜨면 이 경우이며, 공식 API인 워크넷
+(`WORKNET_AUTH_KEY`)을 켜는 것이 해법입니다.
+
+**4. 비밀 값은 `.env`가 아니라 Secrets에 넣으세요.** `.env`는 git에 올라가지 않으므로
+클라우드에는 존재하지 않습니다. **Manage app → Settings → Secrets** 에 TOML 형식으로
+입력합니다.
 
 ## 참고 사항
 

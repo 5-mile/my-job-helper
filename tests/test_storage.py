@@ -1,0 +1,300 @@
+"""저장소 계층 테스트 — SQLite / PostgreSQL 두 방언 모두 검증한다.
+
+실제 Postgres 서버 없이도 돌도록 두 가지 방법을 쓴다.
+
+1. 생성된 Postgres SQL을 sqlglot으로 **문법 검증**한다.
+2. `%s`와 `SERIAL` 만 되돌린 뒤 SQLite에서 **실행**한다.
+   `ON CONFLICT ... DO UPDATE SET ... EXCLUDED.x` 는 SQLite도 지원하므로,
+   Postgres 전용 분기의 동작을 그대로 확인할 수 있다.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sqlite3
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from jobhelper import db, storage  # noqa: E402
+
+
+# ==========================================
+# 방언별 SQL 생성
+# ==========================================
+@pytest.fixture
+def as_postgres(monkeypatch):
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+
+
+@pytest.fixture
+def as_sqlite(monkeypatch):
+    monkeypatch.setattr(storage, "is_postgres", lambda: False)
+
+
+def test_placeholder_translation(as_postgres):
+    assert storage.translate("SELECT * FROM t WHERE a = ? AND b = ?") == (
+        "SELECT * FROM t WHERE a = %s AND b = %s"
+    )
+
+
+def test_placeholder_untouched_on_sqlite(as_sqlite):
+    query = "SELECT * FROM t WHERE a = ?"
+    assert storage.translate(query) == query
+
+
+def test_question_mark_inside_string_literal_is_preserved(as_postgres):
+    """문자열 리터럴 안의 물음표까지 바꿔버리면 안 된다."""
+    out = storage.translate("SELECT * FROM t WHERE note = '왜?' AND a = ?")
+    assert out == "SELECT * FROM t WHERE note = '왜?' AND a = %s"
+
+
+def test_autoincrement_pk(as_postgres):
+    assert storage.autoincrement_pk() == "SERIAL PRIMARY KEY"
+
+
+def test_autoincrement_pk_sqlite(as_sqlite):
+    assert storage.autoincrement_pk() == "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+
+def test_insert_or_ignore_postgres(as_postgres):
+    sql = storage.insert_or_ignore("t", ["a", "b"], ["a"])
+    assert "ON CONFLICT (a) DO NOTHING" in sql
+    assert "INSERT OR IGNORE" not in sql
+
+
+def test_insert_or_ignore_sqlite(as_sqlite):
+    sql = storage.insert_or_ignore("t", ["a", "b"], ["a"])
+    assert sql.startswith("INSERT OR IGNORE INTO t")
+
+
+def test_upsert_postgres_updates_non_key_columns(as_postgres):
+    sql = storage.upsert("t", ["a", "b", "c"], ["a"])
+    assert "ON CONFLICT (a) DO UPDATE SET" in sql
+    assert "b = EXCLUDED.b" in sql
+    assert "c = EXCLUDED.c" in sql
+    assert "a = EXCLUDED.a" not in sql  # 키 자신은 갱신하지 않는다
+
+
+def test_upsert_sqlite(as_sqlite):
+    assert storage.upsert("t", ["a", "b"], ["a"]).startswith("INSERT OR REPLACE INTO t")
+
+
+def test_backend_name_follows_database_url(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: "postgresql://x/y")
+    assert storage.is_postgres() is True
+    assert storage.backend_name() == "PostgreSQL"
+
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    assert storage.is_postgres() is False
+    assert storage.backend_name() == "SQLite"
+
+
+# ==========================================
+# 생성된 Postgres SQL의 문법 검증
+# ==========================================
+def _postgres_statements() -> list[str]:
+    return [
+        f"CREATE TABLE IF NOT EXISTS scrapped_jobs (id {storage.autoincrement_pk()}, "
+        "source TEXT, company TEXT, position TEXT, date TEXT, link TEXT)",
+        "ALTER TABLE scrapped_jobs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT '관심'",
+        "DELETE FROM scrapped_jobs WHERE id NOT IN "
+        "(SELECT MIN(id) FROM scrapped_jobs GROUP BY company, position)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_job_unique ON scrapped_jobs (company, position)",
+        storage.insert_or_ignore("scrapped_jobs", db._JOB_COLUMNS, ["company", "position"]),
+        storage.insert_or_ignore("seen_jobs", ["job_key", "first_seen"], ["job_key"]),
+        storage.insert_or_ignore("alert_log", ["job_id", "alert_date"], ["job_id", "alert_date"]),
+        storage.upsert(
+            "company_info_cache",
+            ["company", "employees", "avg_monthly_pay", "address", "joined_this_month",
+             "left_this_month", "data_month", "found", "fetched_at"],
+            ["company"],
+        ),
+        "SELECT status, COUNT(*) AS n FROM scrapped_jobs GROUP BY status",
+        "UPDATE scrapped_jobs SET status = ?, memo = ? WHERE id = ?",
+    ]
+
+
+def test_generated_postgres_sql_is_syntactically_valid(as_postgres):
+    """sqlglot이 Postgres 방언으로 파싱하지 못하면 문법 오류다."""
+    sqlglot = pytest.importorskip("sqlglot")
+
+    for statement in _postgres_statements():
+        translated = storage.translate(statement)
+        # 드라이버 자리표시자는 파서가 모르므로 리터럴로 바꿔서 검사한다.
+        probe = translated.replace("%s", "'x'")
+        parsed = sqlglot.parse(probe, dialect="postgres")
+        assert parsed and parsed[0] is not None, f"파싱 실패: {statement}"
+
+
+# ==========================================
+# Postgres 분기를 실제로 실행 (SQLite 위에서)
+# ==========================================
+class _FakePgCursor:
+    """psycopg 커서 흉내. Postgres SQL을 SQLite가 이해하도록 최소 변환."""
+
+    def __init__(self, cursor, log):
+        self._cursor = cursor
+        self._log = log
+
+    @staticmethod
+    def _adapt(query: str) -> str:
+        query = query.replace("%s", "?")
+        query = query.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
+        # SQLite에는 ADD COLUMN IF NOT EXISTS가 없다.
+        query = re.sub(r"ADD COLUMN IF NOT EXISTS", "ADD COLUMN", query)
+        return query
+
+    def execute(self, query, params=()):
+        self._log.append(query)
+        try:
+            self._cursor.execute(self._adapt(query), params)
+        except sqlite3.OperationalError as exc:
+            # 이미 있는 컬럼을 다시 추가하는 경우만 무시 (Postgres의 IF NOT EXISTS 흉내)
+            if "duplicate column name" not in str(exc):
+                raise
+        return self
+
+    def executemany(self, query, seq):
+        self._log.append(query)
+        self._cursor.executemany(self._adapt(query), seq)
+        return self
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return dict(row) if row is not None else None
+
+    def fetchall(self):
+        return [dict(r) for r in self._cursor.fetchall()]
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+
+class _FakePgConnection:
+    closed = False
+
+    def __init__(self, path, log):
+        self._raw = sqlite3.connect(path)
+        self._raw.row_factory = sqlite3.Row
+        self._log = log
+
+    def cursor(self):
+        return _FakePgCursor(self._raw.cursor(), self._log)
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+
+@pytest.fixture
+def pg_like(tmp_path, monkeypatch):
+    """Postgres 분기를 타되 저장은 SQLite에 하는 환경."""
+    path = str(tmp_path / "pg.db")
+    log: list[str] = []
+    conn = _FakePgConnection(path, log)
+
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
+    return log
+
+
+def test_full_flow_on_postgres_branch(pg_like):
+    """init → save → update → count → delete 를 Postgres SQL로 수행한다."""
+    db.init_db()
+
+    job = {
+        "source": "사람인", "company": "테스트기업", "position": "생산직",
+        "date": "⏳ D-5", "link": "https://example.com", "location": "경기",
+        "category": "일반/기타기업", "welfares": ["🍔 식사제공"], "deadline": "2026-09-20",
+    }
+    assert db.save_job(job) is True
+    assert db.save_job(job) is False  # ON CONFLICT DO NOTHING 이 동작해야 한다
+
+    jobs = db.load_jobs()
+    assert len(jobs) == 1
+    assert jobs[0]["company"] == "테스트기업"
+    assert jobs[0]["welfares"] == ["🍔 식사제공"]
+
+    db.update_job(jobs[0]["id"], status="지원 완료", memo="자소서 제출")
+    assert db.load_jobs()[0]["status"] == "지원 완료"
+    assert db.status_counts()["지원 완료"] == 1
+    assert db.saved_keys() == {"테스트기업::생산직"}
+
+    db.delete_job(jobs[0]["id"])
+    assert db.load_jobs() == []
+
+    # 실제로 Postgres 문법이 오갔는지 확인
+    joined = " ".join(pg_like)
+    assert "ON CONFLICT" in joined
+    assert "%s" in joined
+
+
+def test_mark_seen_on_postgres_branch(pg_like):
+    db.init_db()
+    assert db.mark_seen(["a", "b"]) == set()
+    assert db.mark_seen(["a", "b", "c"]) == {"c"}
+    assert db.mark_seen(["a", "b", "c"]) == set()
+
+
+def test_company_cache_upsert_on_postgres_branch(pg_like):
+    from jobhelper import company_info
+
+    company_info.init_cache()
+    first = company_info.CompanyInfo(name="테스트기업", employees=100, avg_monthly_pay=3_000_000)
+    company_info._write_cache(first)
+
+    # 같은 회사를 다시 쓰면 덮어써져야 한다 (ON CONFLICT DO UPDATE)
+    second = company_info.CompanyInfo(name="테스트기업", employees=250, avg_monthly_pay=3_400_000)
+    company_info._write_cache(second)
+
+    cached = company_info._read_cache("테스트기업")
+    assert cached is not None
+    assert cached.employees == 250
+    assert cached.avg_monthly_pay == 3_400_000
+
+
+def test_alert_log_on_postgres_branch(pg_like):
+    from datetime import date
+
+    from jobhelper import notify
+
+    db.init_db()
+    notify.init_alert_log()
+    today = date(2026, 9, 5)
+
+    assert notify._already_sent(1, today) is False
+    notify._mark_sent([1, 2], today)
+    assert notify._already_sent(1, today) is True
+    notify._mark_sent([1, 2], today)  # 중복 삽입이 터지지 않아야 한다
+    assert notify._already_sent(2, today) is True
+
+
+# ==========================================
+# 백엔드 선택
+# ==========================================
+def test_explicit_db_path_ignores_postgres_setting(tmp_path, monkeypatch):
+    """테스트나 CLI가 db_path를 주면 Postgres 설정과 무관하게 그 파일을 쓴다."""
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    path = str(tmp_path / "explicit.db")
+
+    db.init_db(path)
+    db.save_job({"company": "A", "position": "B"}, path)
+    assert len(db.load_jobs(db_path=path)) == 1
+
+
+def test_health_check_reports_sqlite(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    monkeypatch.setattr(storage, "SQLITE_PATH", str(tmp_path / "h.db"))
+    ok, message = storage.health_check()
+    assert ok is True
+    assert "SQLite" in message

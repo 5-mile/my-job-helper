@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import smtplib
-import sqlite3
 from datetime import date
 from email.message import EmailMessage
 from typing import Any
@@ -18,7 +17,8 @@ import requests
 
 from . import settings
 from .config import REQUEST_TIMEOUT
-from .db import connect, init_db, load_jobs
+from .db import init_db, load_jobs
+from .storage import connect, insert_or_ignore
 from .dates import days_left, now_iso, parse_deadline
 
 log = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _mark_sent(job_ids: list[int], today: date, db_path: str | None = None) -> N
         return
     with connect(db_path) as conn:
         conn.executemany(
-            "INSERT OR IGNORE INTO alert_log (job_id, alert_date) VALUES (?, ?)",
+            insert_or_ignore("alert_log", ["job_id", "alert_date"], ["job_id", "alert_date"]),
             [(jid, today.isoformat()) for jid in job_ids],
         )
 

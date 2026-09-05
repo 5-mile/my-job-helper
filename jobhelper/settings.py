@@ -92,9 +92,16 @@ def email_config() -> dict[str, str] | None:
     return None
 
 
+def database_url() -> str | None:
+    """PostgreSQL 접속 문자열. 없으면 로컬 SQLite를 쓴다."""
+    return get("DATABASE_URL")
+
+
 def missing_keys() -> list[str]:
     """설정되지 않은 선택 기능 목록 (UI 안내용)."""
     missing = []
+    if not database_url():
+        missing.append("DATABASE_URL (보관함 영구 저장 - 클라우드 배포 시 필수)")
     if not nps_service_key():
         missing.append("NPS_SERVICE_KEY (기업 규모·보수 정보)")
     if not worknet_auth_key():
