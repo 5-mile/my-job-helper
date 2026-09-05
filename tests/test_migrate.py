@@ -271,10 +271,10 @@ def test_setup_cloud_stops_without_database_url(monkeypatch, capsys):
 def test_setup_cloud_masks_password(monkeypatch):
     import setup_cloud
 
-    masked = setup_cloud._mask("postgresql://postgres:hunter2@db.x.supabase.co:5432/postgres")
+    masked = setup_cloud._mask("postgresql://postgres:hunter2@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres")
     assert "hunter2" not in masked
     assert "****" in masked
-    assert "db.x.supabase.co" in masked
+    assert "aws-0-ap-southeast-1.pooler.supabase.com" in masked
 
 
 def test_setup_cloud_full_flow(tmp_path, monkeypatch, capsys):
@@ -285,7 +285,7 @@ def test_setup_cloud_full_flow(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
     monkeypatch.setattr(
         storage, "database_url",
-        lambda: "postgresql://postgres:pw@db.x.supabase.co:5432/postgres",
+        lambda: "postgresql://postgres.abc:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
     )
 
     source = str(tmp_path / "src.db")
@@ -311,7 +311,7 @@ def test_setup_cloud_never_prints_password(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
     monkeypatch.setattr(
         storage, "database_url",
-        lambda: "postgresql://postgres:s3cr3t-pw@db.x.supabase.co:5432/postgres",
+        lambda: "postgresql://postgres.abc:s3cr3t-pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
     )
     secrets_path = tmp_path / "secrets.toml"
     monkeypatch.setattr(setup_cloud, "SECRETS_FILE", str(secrets_path))
@@ -336,7 +336,7 @@ def test_setup_cloud_show_flag_prints_password(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
     monkeypatch.setattr(
         storage, "database_url",
-        lambda: "postgresql://postgres:s3cr3t-pw@db.x.supabase.co:5432/postgres",
+        lambda: "postgresql://postgres.abc:s3cr3t-pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
     )
     monkeypatch.setattr(
         sys, "argv",
@@ -355,7 +355,7 @@ def test_setup_cloud_handles_missing_source(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(storage, "is_postgres", lambda: True)
     monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
     monkeypatch.setattr(
-        storage, "database_url", lambda: "postgresql://postgres:pw@db.x.supabase.co:5432/postgres"
+        storage, "database_url", lambda: "postgresql://postgres.abc:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
     )
     monkeypatch.setattr(
         sys, "argv", ["setup_cloud.py", "--yes", "--source", str(tmp_path / "없음.db")]
@@ -371,7 +371,7 @@ def test_setup_cloud_stops_on_password_placeholder(monkeypatch, capsys):
 
     monkeypatch.setattr(
         storage, "database_url",
-        lambda: "postgresql://postgres.abc:[YOUR-PASSWORD]@aws-0-x.pooler.supabase.com:5432/postgres",
+        lambda: "postgresql://postgres.abc:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
     )
     monkeypatch.setattr(sys, "argv", ["setup_cloud.py"])
 

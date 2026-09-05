@@ -378,3 +378,34 @@ def test_validate_url_accepts_password_with_exclamation():
     pytest.importorskip("psycopg")
     ok, message = storage.validate_url(_BASE.format("abc123!xyz"))
     assert ok, message
+
+
+# ==========================================
+# 예시 호스트 / Direct connection 감지
+# ==========================================
+def test_validate_url_rejects_example_host():
+    """문서의 예시 호스트를 그대로 붙여넣은 경우를 잡는다."""
+    pytest.importorskip("psycopg")
+    for host in ("db.x.supabase.co", "db.xxxxx.supabase.co"):
+        ok, message = storage.validate_url(f"postgresql://postgres:pw@{host}:5432/postgres")
+        assert not ok
+        assert "예시 문자열" in message
+
+
+def test_warn_direct_connection_flags_ipv6_only_host():
+    """db.<ref>.supabase.co 는 IPv6 전용이라 Streamlit Cloud에서 실패한다."""
+    pytest.importorskip("psycopg")
+    warning = storage.warn_direct_connection(
+        "postgresql://postgres:pw@db.mpbhyqmqbhcqyrzstsge.supabase.co:5432/postgres"
+    )
+    assert "IPv6" in warning
+    assert "pooler" in warning
+
+
+def test_warn_direct_connection_silent_for_pooler():
+    pytest.importorskip("psycopg")
+    assert storage.warn_direct_connection(_BASE.format("pw")) == ""
+
+
+def test_warn_direct_connection_silent_when_unset():
+    assert storage.warn_direct_connection("") == ""

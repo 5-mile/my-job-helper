@@ -27,9 +27,37 @@ st.set_page_config(
 )
 st.markdown(ui.CSS, unsafe_allow_html=True)
 
-db.init_db()
-company_info.init_cache()
-notify.init_alert_log()
+# 저장소 연결은 앱 시작에 꼭 필요하므로, 실패하면 원인을 화면에 설명하고 멈춘다.
+# (그냥 두면 psycopg 트레이스백만 나와서 무엇이 잘못됐는지 알기 어렵다.)
+_db_valid, _db_why = storage.validate_url() if storage.is_postgres() else (True, "")
+if not _db_valid:
+    st.error(f"❌ DATABASE_URL 설정 오류 — {_db_why}")
+    st.info(
+        "Streamlit Cloud라면 **Manage app → Settings → Secrets** 의 DATABASE_URL을 "
+        "고친 뒤 **Reboot app** 하세요. 로컬이라면 `.env`를 고치고 다시 실행하세요."
+    )
+    st.stop()
+
+_direct_warning = storage.warn_direct_connection() if storage.is_postgres() else ""
+
+try:
+    db.init_db()
+    company_info.init_cache()
+    notify.init_alert_log()
+except Exception as exc:
+    st.error(f"❌ 데이터베이스에 연결하지 못했습니다 — {type(exc).__name__}")
+    if _direct_warning:
+        st.warning(f"⚠️ {_direct_warning}")
+    with st.expander("자세한 오류"):
+        st.code(str(exc))
+    st.info(
+        "확인할 것\n\n"
+        "- Secrets의 DATABASE_URL 호스트가 `...pooler.supabase.com` 인지 "
+        "(`db.xxx.supabase.co`는 IPv6 전용이라 여기서 연결되지 않습니다)\n"
+        "- 비밀번호에서 `[ ]` 대괄호를 지웠는지\n"
+        "- Supabase 프로젝트가 일시 정지 상태는 아닌지"
+    )
+    st.stop()
 
 
 # ==========================================

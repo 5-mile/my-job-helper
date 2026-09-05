@@ -103,7 +103,41 @@ def validate_url(url: str | None = None) -> tuple[bool, str]:
         return False, (
             "비밀번호에 @ 가 들어 있는 것 같습니다. %40 으로 바꿔주세요."
         )
+
+    host = parsed.get("host") or ""
+    # 문서·예시에 쓰인 자리표시자 호스트를 그대로 붙여넣는 실수
+    if re.fullmatch(r"db\.x+\.supabase\.co", host) or "프로젝트" in host:
+        return False, (
+            f"호스트가 예시 문자열입니다 ({host}). Supabase 대시보드의 "
+            "[Connect] → Session pooler 에서 실제 접속 문자열을 복사하세요."
+        )
     return True, ""
+
+
+def warn_direct_connection(url: str | None = None) -> str:
+    """Direct connection 호스트면 경고 문구를 돌려준다 (빈 문자열이면 정상).
+
+    db.<ref>.supabase.co 는 IPv6 전용이라 Streamlit Cloud 같은 IPv4 환경에서
+    'Name or service not known' 으로 실패한다. 로컬에서는 될 수도 있어서
+    막지 않고 경고만 한다.
+    """
+    url = url if url is not None else database_url()
+    if not url:
+        return ""
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        host = (conninfo_to_dict(url).get("host") or "")
+    except Exception:
+        return ""
+    if host.startswith("db.") and host.endswith(".supabase.co"):
+        return (
+            "Direct connection 호스트를 쓰고 있습니다. 이 주소는 IPv6 전용이라 "
+            "Streamlit Cloud에서는 'Name or service not known'으로 실패합니다. "
+            "[Connect] → Session pooler 의 주소"
+            "(aws-0-....pooler.supabase.com)를 쓰세요."
+        )
+    return ""
 
 
 def is_postgres() -> bool:

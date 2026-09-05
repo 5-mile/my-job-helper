@@ -54,7 +54,7 @@ def _print_missing_url_guide() -> None:
     print("\n6. 다시 실행:  python setup_cloud.py")
 
 
-SECRETS_FILE = "streamlit_secrets_붙여넣기용.toml"
+SECRETS_FILE = "streamlit_secrets.toml"
 
 
 def _write_secrets_file(url: str) -> str:
