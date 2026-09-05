@@ -151,6 +151,15 @@ def main() -> int:
         print("   비밀번호에 @ : / ? # 같은 문자가 있으면 percent-encoding이 필요합니다.",
               file=sys.stderr)
         return 1
+    valid, why = storage.validate_url(url)
+    if not valid:
+        print(f"[1/4] DATABASE_URL ❌  {why}", file=sys.stderr)
+        print(file=sys.stderr)
+        print(f"   {settings.ENV_FILE} 의 DATABASE_URL 줄을 확인하세요.", file=sys.stderr)
+        print("   비밀번호에 쓰인 문자별 처리:", file=sys.stderr)
+        print("     ! # ? : - 그대로 두면 됩니다", file=sys.stderr)
+        print("     @ -> %40   / -> %2F   % -> %25", file=sys.stderr)
+        return 1
     print(f"[1/4] DATABASE_URL 확인 ✅  {_mask(url)}")
 
     # --- 2. 연결 확인 ---

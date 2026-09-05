@@ -320,3 +320,61 @@ def test_url_needs_password_false_for_real_password():
 def test_url_needs_password_false_when_unset(monkeypatch):
     monkeypatch.setattr(storage, "database_url", lambda: None)
     assert storage.url_needs_password() is False
+
+
+# ==========================================
+# 접속 문자열 검증 (비밀번호 특수문자)
+# ==========================================
+_BASE = "postgresql://postgres.abc:{}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+
+
+@pytest.mark.parametrize("pw", ["abc!def", "!start", "end!", "a!!b", "ok:colon", "fine#hash"])
+def test_validate_url_accepts_safe_specials(pw):
+    """! # ? : 는 인코딩 없이도 정상이다."""
+    pytest.importorskip("psycopg")
+    ok, message = storage.validate_url(_BASE.format(pw))
+    assert ok, message
+
+
+@pytest.mark.parametrize("pw,hint", [
+    ("P@ssw0rd", "%40"),
+    ("with/slash", "%2F"),
+    ("with%pct", "%25"),
+])
+def test_validate_url_rejects_unencoded_specials(pw, hint):
+    """@ / % 는 인코딩하지 않으면 조용히 잘못 해석되므로 먼저 잡는다."""
+    pytest.importorskip("psycopg")
+    ok, message = storage.validate_url(_BASE.format(pw))
+    assert not ok
+    assert hint in message
+
+
+def test_validate_url_accepts_encoded_specials():
+    pytest.importorskip("psycopg")
+    ok, message = storage.validate_url(_BASE.format("P%40ssw0rd"))
+    assert ok, message
+
+
+def test_validate_url_empty():
+    ok, message = storage.validate_url("")
+    assert not ok
+    assert "비어" in message
+
+
+@pytest.mark.parametrize("pw,hint", [
+    ("[mypassword!]", "대괄호까지 지워야"),
+    ("my[pass]word", "%5B"),
+])
+def test_validate_url_catches_leftover_brackets(pw, hint):
+    """[YOUR-PASSWORD]의 대괄호를 남긴 채 안쪽만 바꾸는 실수를 잡는다."""
+    pytest.importorskip("psycopg")
+    ok, message = storage.validate_url(_BASE.format(pw))
+    assert not ok
+    assert hint in message
+
+
+def test_validate_url_accepts_password_with_exclamation():
+    """! 는 percent-encoding 없이 그대로 동작한다 (실제 연결로 확인됨)."""
+    pytest.importorskip("psycopg")
+    ok, message = storage.validate_url(_BASE.format("abc123!xyz"))
+    assert ok, message

@@ -97,6 +97,23 @@ Secrets 내용은 **화면에 출력하지 않고 파일로 저장합니다**
 > 고연봉 회사는 기준소득월액 상한(월 637만원) 때문에 실제보다 낮게 나옵니다.
 > 상한에 걸린 경우 `380만+` 처럼 `+`를 붙여 표시합니다.
 
+### 비밀번호에 특수문자가 있다면
+
+접속 문자열은 URI라서 일부 문자를 그대로 쓸 수 없습니다. 실제로 확인한 결과는
+다음과 같습니다.
+
+| 문자 | 처리 |
+| --- | --- |
+| `!` `#` `?` `:` `$` `*` | 그대로 두면 됩니다 |
+| `@` | `%40` 으로 바꾸세요 |
+| `/` | `%2F` |
+| `%` | `%25` |
+| `[` `]` | `%5B` `%5D` |
+
+`[YOUR-PASSWORD]`를 바꿀 때 **대괄호까지 함께 지워야 합니다.** 안쪽 글자만
+바꾸면 대괄호가 비밀번호의 일부가 되어 인증에 실패합니다.
+`setup_cloud.py`가 연결 전에 이런 경우를 잡아내 알려줍니다.
+
 ### 3. 워크넷 공고 — `WORKNET_AUTH_KEY`
 
 [워크넷 오픈API](https://openapi.work.go.kr)에서 채용정보 API 인증키를 발급받아 입력하면,
@@ -167,9 +184,10 @@ python migrate_db.py --overwrite        # 대상에 이미 있는 공고도 덮�
 pytest tests -q
 ```
 
-네트워크 없이 도는 92개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+네트워크 없이 도는 106개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
 sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
-(Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
+(Postgres 서버 없이도 CI에서 돕니다). 실제 Supabase(Session pooler)에서도
+테이블 생성·저장·중복 차단·수정·삭제·이전을 한 바퀴 검증했습니다. GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
 
 ## 프로젝트 구조
@@ -195,7 +213,7 @@ jobhelper/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 92개
+tests/                       테스트 106개
 ```
 
 ## 데이터 저장 위치

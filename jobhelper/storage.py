@@ -54,6 +54,58 @@ def url_needs_password(url: str | None = None) -> bool:
     return any(p in url for p in PASSWORD_PLACEHOLDERS)
 
 
+def validate_url(url: str | None = None) -> tuple[bool, str]:
+    """접속 문자열이 제대로 파싱되는지 확인한다.
+
+    비밀번호에 @ / % 같은 문자가 인코딩 없이 들어가면 URL이 조용히 잘못
+    해석되어, 나중에 인증 실패로만 보인다. 그걸 먼저 잡아낸다.
+    (! # ? : 는 인코딩 없이도 정상 동작한다.)
+    """
+    url = url if url is not None else database_url()
+    if not url:
+        return False, "DATABASE_URL이 비어 있습니다."
+
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+    except ImportError:
+        return True, ""  # 드라이버가 없으면 여기서 판단하지 않는다
+
+    try:
+        parsed = conninfo_to_dict(url)
+    except Exception:
+        return False, (
+            "접속 문자열을 해석하지 못했습니다. 비밀번호에 % 가 있다면 %25 로 "
+            "바꿔주세요."
+        )
+
+    if not parsed.get("host"):
+        return False, (
+            "호스트를 읽지 못했습니다. 비밀번호에 / 가 있다면 %2F 로 바꿔주세요."
+        )
+    password = parsed.get("password")
+    if not password:
+        return False, (
+            "비밀번호를 읽지 못했습니다. 비밀번호에 / 가 있다면 %2F 로 바꿔주세요. "
+            "([YOUR-PASSWORD] 자리를 아직 안 바꾸셨는지도 확인해 보세요.)"
+        )
+    # 자리표시자의 대괄호만 남기고 안쪽 글자를 바꾸는 실수가 잦다.
+    if password.startswith("[") and password.endswith("]"):
+        return False, (
+            "비밀번호가 대괄호로 감싸여 있습니다. [YOUR-PASSWORD]를 바꿀 때 "
+            "대괄호까지 지워야 합니다. 대괄호를 빼고 비밀번호만 남기세요."
+        )
+    if "[" in password or "]" in password:
+        return False, (
+            "비밀번호에 대괄호가 들어 있습니다. 자리표시자의 [ ] 가 남아 있는지 "
+            "확인하세요. 비밀번호에 실제로 [ 나 ] 가 쓰였다면 %5B / %5D 로 바꿔주세요."
+        )
+    if "@" in url.rsplit("@", 1)[0].split("://", 1)[-1].split(":", 1)[-1]:
+        return False, (
+            "비밀번호에 @ 가 들어 있는 것 같습니다. %40 으로 바꿔주세요."
+        )
+    return True, ""
+
+
 def is_postgres() -> bool:
     return bool(database_url())
 
