@@ -304,7 +304,7 @@ def test_health_check_reports_sqlite(tmp_path, monkeypatch):
 # 비밀번호 자리표시자 감지
 # ==========================================
 @pytest.mark.parametrize("url", [
-    "postgresql://postgres.abc:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres.exampleprojectref:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres",
     "postgresql://postgres:[your-password]@db.x.supabase.co:5432/postgres",
     "postgresql://postgres:비밀번호@db.x.supabase.co:5432/postgres",
 ])
@@ -313,7 +313,7 @@ def test_url_needs_password_detects_placeholder(url):
 
 
 def test_url_needs_password_false_for_real_password():
-    real = "postgresql://postgres.abc:s3cr3t@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    real = "postgresql://postgres.exampleprojectref:s3cr3t@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
     assert storage.url_needs_password(real) is False
 
 
@@ -325,7 +325,7 @@ def test_url_needs_password_false_when_unset(monkeypatch):
 # ==========================================
 # 접속 문자열 검증 (비밀번호 특수문자)
 # ==========================================
-_BASE = "postgresql://postgres.abc:{}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+_BASE = "postgresql://postgres.exampleprojectref:{}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
 
 
 @pytest.mark.parametrize("pw", ["abc!def", "!start", "end!", "a!!b", "ok:colon", "fine#hash"])
@@ -409,3 +409,41 @@ def test_warn_direct_connection_silent_for_pooler():
 
 def test_warn_direct_connection_silent_when_unset():
     assert storage.warn_direct_connection("") == ""
+
+
+# ==========================================
+# pooler 사용자명 검증
+# ==========================================
+def test_validate_url_rejects_example_username():
+    """postgres.abc 같은 예시 사용자명을 잡는다 (실제 배포에서 겪은 오류)."""
+    pytest.importorskip("psycopg")
+    url = "postgresql://postgres.abc:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    ok, message = storage.validate_url(url)
+    assert not ok
+    assert "postgres.<프로젝트ID>" in message
+
+
+def test_validate_url_rejects_bare_postgres_user_on_pooler():
+    """pooler는 postgres.<ref> 형태를 요구한다."""
+    pytest.importorskip("psycopg")
+    url = "postgresql://postgres:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    ok, message = storage.validate_url(url)
+    assert not ok
+    assert "postgres.<프로젝트ID>" in message
+
+
+def test_validate_url_accepts_real_project_ref():
+    pytest.importorskip("psycopg")
+    url = ("postgresql://postgres.mpbhyqmqbhcqyrzstsge:pw@"
+           "aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres")
+    ok, message = storage.validate_url(url)
+    assert ok, message
+
+
+def test_validate_url_ignores_username_shape_for_direct_host():
+    """직접 연결 호스트에서는 사용자명이 postgres 하나뿐이라 검사하지 않는다."""
+    pytest.importorskip("psycopg")
+    ok, _ = storage.validate_url(
+        "postgresql://postgres:pw@db.mpbhyqmqbhcqyrzstsge.supabase.co:5432/postgres"
+    )
+    assert ok

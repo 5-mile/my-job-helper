@@ -111,6 +111,24 @@ def validate_url(url: str | None = None) -> tuple[bool, str]:
             f"호스트가 예시 문자열입니다 ({host}). Supabase 대시보드의 "
             "[Connect] → Session pooler 에서 실제 접속 문자열을 복사하세요."
         )
+
+    # pooler를 쓸 때 사용자명은 반드시 postgres.<프로젝트ID> 형태여야 한다.
+    # 프로젝트 ID는 20자 안팎의 소문자라, 짧으면 예시를 붙여넣은 것이다.
+    user = parsed.get("user") or ""
+    if "pooler.supabase.com" in host:
+        if user == "postgres":
+            return False, (
+                "pooler를 쓸 때는 사용자명이 postgres 가 아니라 "
+                "postgres.<프로젝트ID> 여야 합니다. [Connect] → Session pooler 의 "
+                "문자열을 그대로 복사하세요."
+            )
+        ref = user.split(".", 1)[1] if "." in user else ""
+        if not re.fullmatch(r"[a-z]{16,}", ref):
+            return False, (
+                f"사용자명이 올바르지 않습니다 ({user}). postgres.<프로젝트ID> 형태여야 "
+                "하며, 프로젝트 ID는 20자 안팎의 소문자입니다. 예시 문자열을 "
+                "붙여넣지 말고 [Connect] → Session pooler 의 값을 복사하세요."
+            )
     return True, ""
 
 
