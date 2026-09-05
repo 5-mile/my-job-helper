@@ -62,8 +62,13 @@ python setup_cloud.py
 ```
 
 연결 확인 → 스키마 생성 → 기존 보관함 이전 → Streamlit Secrets에 붙여넣을
-문구 출력까지 순서대로 진행합니다. `.env`에 URL이 없으면 어디서 받아 어떻게
+파일 생성까지 순서대로 진행합니다. `.env`에 URL이 없으면 어디서 받아 어떻게
 넣는지 안내하고 멈춥니다.
+
+Secrets 내용은 **화면에 출력하지 않고 파일로 저장합니다**
+(`streamlit_secrets_붙여넣기용.toml`, git에서 제외됨). 터미널 기록이나
+스크린샷에 비밀번호가 남지 않게 하기 위해서입니다. 화면에 바로 보려면
+`--show`를 붙이세요.
 
 설정이 끝나면 앱 사이드바 "💾 저장소"에
 `PostgreSQL · 보관함이 영구 저장됩니다`가 표시됩니다.
@@ -154,7 +159,7 @@ python migrate_db.py --overwrite        # 대상에 이미 있는 공고도 덮�
 pytest tests -q
 ```
 
-네트워크 없이 도는 84개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+네트워크 없이 도는 86개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
 sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
 (Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
@@ -182,7 +187,7 @@ jobhelper/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 84개
+tests/                       테스트 86개
 ```
 
 ## 데이터 저장 위치

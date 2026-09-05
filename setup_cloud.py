@@ -51,17 +51,59 @@ def _print_missing_url_guide() -> None:
     print("\n6. 다시 실행:  python setup_cloud.py")
 
 
-def _print_secrets_guide(url: str) -> None:
+SECRETS_FILE = "streamlit_secrets_붙여넣기용.toml"
+
+
+def _write_secrets_file(url: str) -> str:
+    """Streamlit Secrets에 붙여넣을 내용을 파일로 저장한다.
+
+    화면에 출력하면 터미널 기록·스크린샷·로그에 비밀번호가 남기 때문에
+    파일로만 남기고, 그 파일은 .gitignore로 제외한다.
+    """
+    path = (
+        SECRETS_FILE
+        if os.path.isabs(SECRETS_FILE)
+        else os.path.join(os.path.dirname(os.path.abspath(__file__)), SECRETS_FILE)
+    )
+    lines = [
+        "# Streamlit Cloud > Manage app > Settings > Secrets 에 붙여넣으세요.",
+        "# 붙여넣은 뒤에는 이 파일을 삭제해도 됩니다.",
+        "",
+        f'DATABASE_URL = "{url}"',
+        "",
+    ]
+    for name in ("NPS_SERVICE_KEY", "WORKNET_AUTH_KEY", "TELEGRAM_BOT_TOKEN",
+                 "TELEGRAM_CHAT_ID", "SMTP_USER", "SMTP_PASSWORD", "ALERT_EMAIL_TO"):
+        value = settings.get(name)
+        if value:
+            lines.append(f'{name} = "{value}"')
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return path
+
+
+def _print_secrets_guide(url: str, show: bool = False) -> None:
     print("\n" + "=" * 64)
     print("이제 Streamlit Cloud에도 같은 값을 넣어야 합니다.")
     print("=" * 64)
+
+    if show:
+        print("\n아래 내용을 Secrets에 붙여넣으세요:\n")
+        print("-" * 64)
+        print(f'DATABASE_URL = "{url}"')
+        print("-" * 64)
+    else:
+        path = _write_secrets_file(url)
+        print(f"\n붙여넣을 내용을 파일로 저장했습니다:\n\n   {path}\n")
+        print("   (비밀번호가 터미널 기록에 남지 않도록 화면에는 출력하지 않습니다.")
+        print("    화면에 바로 보려면 --show 옵션을 쓰세요.)")
+        print("\n.env에 넣어둔 다른 키(API 키·알림 설정)가 있으면 함께 담았습니다.")
+
     print("\n1. 배포한 앱에서 우측 하단 'Manage app' 클릭")
     print("2. 우측 위 ⋮ → Settings → Secrets")
-    print("3. 아래 내용을 붙여넣고 Save:\n")
-    print("-" * 64)
-    print(f'DATABASE_URL = "{url}"')
-    print("-" * 64)
-    print("\n4. 다시 ⋮ → Reboot app")
+    print("3. 위 파일 내용을 붙여넣고 Save")
+    print("4. 다시 ⋮ → Reboot app")
     print("\n   (Reboot는 꼭 하세요. Streamlit Cloud는 새 코드를 받아도 이미 올라간")
     print("    모듈을 재사용해서 ImportError가 나는 경우가 있습니다.)")
     print("\n앱 사이드바 '💾 저장소'에 'PostgreSQL · 보관함이 영구 저장됩니다'가")
@@ -74,6 +116,8 @@ def main() -> int:
     parser.add_argument("--overwrite", action="store_true",
                         help="대상에 이미 있는 공고도 원본 내용으로 덮어씀")
     parser.add_argument("--source", default=storage.SQLITE_PATH, help="원본 SQLite 파일")
+    parser.add_argument("--show", action="store_true",
+                        help="Secrets 내용을 파일 대신 화면에 출력 (비밀번호가 노출됩니다)")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -130,7 +174,7 @@ def main() -> int:
                 answer = input("      이 데이터를 옮길까요? [Y/n] ").strip().lower()
                 if answer and answer not in ("y", "yes"):
                     print("      이전을 건너뜁니다.")
-                    _print_secrets_guide(url)
+                    _print_secrets_guide(url, args.show)
                     return 0
 
             result = migrate(args.source, overwrite=args.overwrite)
@@ -152,7 +196,7 @@ def main() -> int:
     total = len(db.load_jobs())
     print(f"[4/4] 확인 ✅  현재 클라우드 DB의 보관함: {total}건")
 
-    _print_secrets_guide(url)
+    _print_secrets_guide(url, args.show)
     return 0
 
 

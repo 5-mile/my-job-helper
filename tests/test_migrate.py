@@ -291,14 +291,60 @@ def test_setup_cloud_full_flow(tmp_path, monkeypatch, capsys):
     source = str(tmp_path / "src.db")
     _make_source(source, SAMPLE)
     monkeypatch.setattr(sys, "argv", ["setup_cloud.py", "--yes", "--source", source])
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_cloud, "SECRETS_FILE", str(tmp_path / "secrets.toml"))
 
     assert setup_cloud.main() == 0
 
     out = capsys.readouterr().out
     assert "이전 완료" in out
     assert "Secrets" in out
-    assert 'DATABASE_URL = "postgresql://postgres:pw@' in out  # 붙여넣을 값은 그대로
     assert len(db.load_jobs()) == 3
+
+
+def test_setup_cloud_never_prints_password(tmp_path, monkeypatch, capsys):
+    """비밀번호가 터미널 출력에 남으면 안 된다 (--show 없이는)."""
+    import setup_cloud
+
+    conn = _FakePgConnection(str(tmp_path / "t.db"), [])
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
+    monkeypatch.setattr(
+        storage, "database_url",
+        lambda: "postgresql://postgres:s3cr3t-pw@db.x.supabase.co:5432/postgres",
+    )
+    secrets_path = tmp_path / "secrets.toml"
+    monkeypatch.setattr(setup_cloud, "SECRETS_FILE", str(secrets_path))
+    monkeypatch.setattr(
+        sys, "argv", ["setup_cloud.py", "--yes", "--source", str(tmp_path / "없음.db")]
+    )
+
+    assert setup_cloud.main() == 0
+
+    out = capsys.readouterr().out
+    assert "s3cr3t-pw" not in out          # 화면에는 없고
+    assert "****" in out                    # 가려서 보여주고
+    assert "s3cr3t-pw" in secrets_path.read_text(encoding="utf-8")  # 파일에는 있다
+
+
+def test_setup_cloud_show_flag_prints_password(tmp_path, monkeypatch, capsys):
+    """--show를 주면 화면에 출력한다 (사용자가 명시적으로 요청한 경우)."""
+    import setup_cloud
+
+    conn = _FakePgConnection(str(tmp_path / "t.db"), [])
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
+    monkeypatch.setattr(
+        storage, "database_url",
+        lambda: "postgresql://postgres:s3cr3t-pw@db.x.supabase.co:5432/postgres",
+    )
+    monkeypatch.setattr(
+        sys, "argv",
+        ["setup_cloud.py", "--yes", "--show", "--source", str(tmp_path / "없음.db")],
+    )
+
+    assert setup_cloud.main() == 0
+    assert "s3cr3t-pw" in capsys.readouterr().out
 
 
 def test_setup_cloud_handles_missing_source(tmp_path, monkeypatch, capsys):
