@@ -30,4 +30,4 @@ jobs:
         run: pytest tests -q
 
       - name: 앱 import 확인
-        run: python -c "import jobhelper, jobhelper.company_info, jobhelper.notify, jobhelper.scrapers, jobhelper.storage"
+        run: python -c "import jobhelper, jobhelper.company_info, jobhelper.notify, jobhelper.scrapers, jobhelper.storage, jobhelper.migrate"

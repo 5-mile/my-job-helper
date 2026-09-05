@@ -70,8 +70,14 @@ DATABASE_URL = "postgresql://postgres:비밀번호@db.xxxxx.supabase.co:5432/pos
 
 설정되면 사이드바 "💾 저장소"에 `PostgreSQL · 보관함이 영구 저장됩니다`가 표시됩니다.
 
-> 로컬 SQLite에 이미 쌓아둔 보관함이 있다면 Postgres로 자동 이전되지는 않습니다.
-> 옮기려면 SQLite 상태에서 CSV로 내려받은 뒤, Postgres로 전환하고 다시 스크랩하세요.
+6. 로컬에 이미 쌓아둔 보관함이 있다면 옮깁니다:
+
+```bash
+python migrate_db.py --dry-run    # 무엇이 옮겨질지 먼저 확인
+python migrate_db.py              # 실제 이전
+```
+
+메모·진행 상태·지원일이 그대로 따라갑니다. 자세한 내용은 아래 '보관함 이전' 참고.
 
 ### 2. 회사 규모·보수 정보 — `NPS_SERVICE_KEY`
 
@@ -124,13 +130,39 @@ python notify.py --days 5     # 5일 이내로 넓히기
 
 같은 공고를 하루에 두 번 보내지 않도록 발송 기록이 남습니다.
 
+## 보관함 이전
+
+로컬 SQLite에 쌓아둔 보관함을 외부 DB로 옮깁니다. `DATABASE_URL`을 설정한 뒤
+한 번만 실행하면 됩니다.
+
+```bash
+python migrate_db.py --dry-run          # 옮겨질 내용만 확인 (아무것도 쓰지 않음)
+python migrate_db.py                    # jobs.db -> DATABASE_URL
+python migrate_db.py --source 다른.db    # 다른 파일에서 옮기기
+python migrate_db.py --overwrite        # 대상에 이미 있는 공고도 덮어쓰기
+```
+
+- **원본은 수정하지 않습니다.** 읽기만 하므로 실패해도 `jobs.db`는 그대로입니다.
+- **여러 번 실행해도 안전합니다.** 기본 동작이 '대상에 없는 것만 추가'라서
+  중복이 생기지 않습니다. 대상에서 수정한 메모도 덮어쓰지 않습니다
+  (원본 내용으로 되돌리려면 `--overwrite`).
+- **구버전 스키마도 읽습니다.** 컬럼이 적은 예전 `jobs.db`는 있는 컬럼만 옮기고
+  나머지는 기본값이 됩니다.
+
+옮기는 대상은 보관함 공고(메모·진행 상태·지원일 포함), '이미 본 공고' 기록,
+회사 정보 캐시입니다.
+
+> 알림 발송 기록(`alert_log`)은 옮기지 않습니다. 이 표는 공고 id를 가리키는데
+> 이전 과정에서 id가 새로 부여되기 때문입니다. 영향은 이전 당일에 마감 알림이
+> 한 번 더 갈 수 있다는 것뿐입니다.
+
 ## 테스트
 
 ```bash
 pytest tests -q
 ```
 
-네트워크 없이 도는 66개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+네트워크 없이 도는 80개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
 sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
 (Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
@@ -141,6 +173,7 @@ sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작�
 app.py                       Streamlit UI (진입점)
 notify.py                    마감 알림 실행 스크립트 (스케줄러용)
 check_db.py                  저장소 연결 점검 스크립트
+migrate_db.py                보관함 이전 스크립트 (SQLite -> PostgreSQL)
 jobhelper/
   config.py                  기업 분류 사전, 상태 목록, 상수
   settings.py                API 키·알림 설정 로딩 (환경변수 > .env > st.secrets)
@@ -149,13 +182,14 @@ jobhelper/
   company_info.py            국민연금 사업장 데이터 조회 및 캐시
   dates.py                   마감일 파싱과 D-Day 계산
   db.py                      보관함 + 지원 현황 (구버전 DB 자동 마이그레이션)
+  migrate.py                 보관함 이전 로직
   notify.py                  마감 임박 공고 탐색과 텔레그램/이메일 발송
   ui.py                      CSS와 카드 렌더링 (HTML 이스케이프 포함)
   scrapers/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 66개
+tests/                       테스트 80개
 ```
 
 ## 데이터 저장 위치
