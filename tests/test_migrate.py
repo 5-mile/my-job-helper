@@ -253,3 +253,67 @@ def test_migrate_uses_postgres_syntax(tmp_path, monkeypatch):
 def test_alert_log_is_not_migrated(tmp_path, target):
     """id가 새로 부여되므로 알림 기록은 일부러 옮기지 않는다."""
     assert "alert_log" not in migrate_mod._TABLES
+
+
+# --- setup_cloud CLI ----------------------------------------------------------
+def test_setup_cloud_stops_without_database_url(monkeypatch, capsys):
+    import setup_cloud
+
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["setup_cloud.py"])
+
+    assert setup_cloud.main() == 1
+    out = capsys.readouterr().out
+    assert "DATABASE_URL이 없습니다" in out
+    assert "supabase.com" in out
+
+
+def test_setup_cloud_masks_password(monkeypatch):
+    import setup_cloud
+
+    masked = setup_cloud._mask("postgresql://postgres:hunter2@db.x.supabase.co:5432/postgres")
+    assert "hunter2" not in masked
+    assert "****" in masked
+    assert "db.x.supabase.co" in masked
+
+
+def test_setup_cloud_full_flow(tmp_path, monkeypatch, capsys):
+    import setup_cloud
+
+    conn = _FakePgConnection(str(tmp_path / "t.db"), [])
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
+    monkeypatch.setattr(
+        storage, "database_url",
+        lambda: "postgresql://postgres:pw@db.x.supabase.co:5432/postgres",
+    )
+
+    source = str(tmp_path / "src.db")
+    _make_source(source, SAMPLE)
+    monkeypatch.setattr(sys, "argv", ["setup_cloud.py", "--yes", "--source", source])
+
+    assert setup_cloud.main() == 0
+
+    out = capsys.readouterr().out
+    assert "이전 완료" in out
+    assert "Secrets" in out
+    assert 'DATABASE_URL = "postgresql://postgres:pw@' in out  # 붙여넣을 값은 그대로
+    assert len(db.load_jobs()) == 3
+
+
+def test_setup_cloud_handles_missing_source(tmp_path, monkeypatch, capsys):
+    """옮길 로컬 파일이 없어도 설정은 끝까지 진행되어야 한다."""
+    import setup_cloud
+
+    conn = _FakePgConnection(str(tmp_path / "t.db"), [])
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+    monkeypatch.setattr(storage, "_connect_postgres", lambda: conn)
+    monkeypatch.setattr(
+        storage, "database_url", lambda: "postgresql://postgres:pw@db.x.supabase.co:5432/postgres"
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["setup_cloud.py", "--yes", "--source", str(tmp_path / "없음.db")]
+    )
+
+    assert setup_cloud.main() == 0
+    assert "이전은 건너뜁니다" in capsys.readouterr().out

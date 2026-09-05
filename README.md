@@ -54,30 +54,22 @@ Supabase 무료 플랜 기준:
 1. <https://supabase.com> 에서 프로젝트 생성
 2. **Project Settings → Database → Connection string → URI** 복사
 3. `[YOUR-PASSWORD]` 자리를 실제 비밀번호로 교체
-4. 로컬 `.env`에 `DATABASE_URL=postgresql://...` 로 넣고 연결 확인:
+4. 로컬 `.env`에 `DATABASE_URL=postgresql://...` 로 한 줄 넣습니다.
+5. 나머지는 아래 한 번의 명령이 처리합니다:
 
 ```bash
-python check_db.py
+python setup_cloud.py
 ```
 
-테이블 생성 → 저장 → 수정 → 삭제까지 한 바퀴 돌려보고 각 단계를 체크해 줍니다.
+연결 확인 → 스키마 생성 → 기존 보관함 이전 → Streamlit Secrets에 붙여넣을
+문구 출력까지 순서대로 진행합니다. `.env`에 URL이 없으면 어디서 받아 어떻게
+넣는지 안내하고 멈춥니다.
 
-5. Streamlit Cloud에서는 **Manage app → Settings → Secrets** 에 같은 값을 넣습니다:
+설정이 끝나면 앱 사이드바 "💾 저장소"에
+`PostgreSQL · 보관함이 영구 저장됩니다`가 표시됩니다.
 
-```toml
-DATABASE_URL = "postgresql://postgres:비밀번호@db.xxxxx.supabase.co:5432/postgres"
-```
-
-설정되면 사이드바 "💾 저장소"에 `PostgreSQL · 보관함이 영구 저장됩니다`가 표시됩니다.
-
-6. 로컬에 이미 쌓아둔 보관함이 있다면 옮깁니다:
-
-```bash
-python migrate_db.py --dry-run    # 무엇이 옮겨질지 먼저 확인
-python migrate_db.py              # 실제 이전
-```
-
-메모·진행 상태·지원일이 그대로 따라갑니다. 자세한 내용은 아래 '보관함 이전' 참고.
+개별 단계를 따로 실행하고 싶다면 `check_db.py`(연결 점검)와
+`migrate_db.py`(이전)를 쓰면 됩니다.
 
 ### 2. 회사 규모·보수 정보 — `NPS_SERVICE_KEY`
 
@@ -162,7 +154,7 @@ python migrate_db.py --overwrite        # 대상에 이미 있는 공고도 덮�
 pytest tests -q
 ```
 
-네트워크 없이 도는 80개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
+네트워크 없이 도는 84개 테스트입니다. PostgreSQL 분기는 생성된 SQL을
 sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작을 확인합니다
 (Postgres 서버 없이도 CI에서 돕니다). GitHub Actions로 push마다 자동 실행됩니다
 (`.github/workflows/tests.yml`).
@@ -172,6 +164,7 @@ sqlglot으로 문법 검증하고, SQLite 위에서 실제로 실행해 동작�
 ```
 app.py                       Streamlit UI (진입점)
 notify.py                    마감 알림 실행 스크립트 (스케줄러용)
+setup_cloud.py               클라우드 저장소 설정 한 번에 실행 (권장)
 check_db.py                  저장소 연결 점검 스크립트
 migrate_db.py                보관함 이전 스크립트 (SQLite -> PostgreSQL)
 jobhelper/
@@ -189,7 +182,7 @@ jobhelper/
     saramin.py               사람인 검색 (셀렉터 폴백 + 수집 진단)
     naver_blog.py            네이버 블로그 RSS
     worknet.py               워크넷 오픈API
-tests/                       테스트 80개
+tests/                       테스트 84개
 ```
 
 ## 데이터 저장 위치
