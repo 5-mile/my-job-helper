@@ -68,9 +68,11 @@ def _write_secrets_file(url: str) -> str:
         if os.path.isabs(SECRETS_FILE)
         else os.path.join(os.path.dirname(os.path.abspath(__file__)), SECRETS_FILE)
     )
+    # 주석까지 ASCII로 쓴다. 한글이 들어가면 클립보드(clip.exe)나 편집기
+    # 인코딩에 따라 깨져서 붙여넣기가 곤란해진다.
     lines = [
-        "# Streamlit Cloud > Manage app > Settings > Secrets 에 붙여넣으세요.",
-        "# 붙여넣은 뒤에는 이 파일을 삭제해도 됩니다.",
+        "# Paste into: Streamlit Cloud > Manage app > Settings > Secrets",
+        "# You can delete this file after pasting.",
         "",
         f'DATABASE_URL = "{url}"',
         "",
