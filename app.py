@@ -9,7 +9,7 @@ from datetime import date
 import streamlit as st
 
 from jobhelper import (
-    ai, company_info, db, insights, notify, profile as profile_mod,
+    ai, company_info, db, freshness, insights, notify, profile as profile_mod,
     settings, storage, ui,
 )
 from jobhelper.config import (
@@ -31,6 +31,14 @@ st.set_page_config(
     page_icon="💼",
     layout="wide",
 )
+# Streamlit Cloud가 새 코드를 받고도 옛 모듈을 재사용하면 여기서 되살린다.
+# (그냥 두면 ImportError / AttributeError 트레이스백만 나오고 원인을 알 수 없다.)
+_stale_help = freshness.ensure_fresh()
+if _stale_help:
+    st.error("⚠️ 서버가 옛 코드를 쓰고 있습니다")
+    st.info(_stale_help)
+    st.stop()
+
 st.markdown(ui.CSS, unsafe_allow_html=True)
 
 # 한 번에 그리는 카드 수. 모바일에서 수백 장을 한꺼번에 그리면 눈에 띄게 느려진다.

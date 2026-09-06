@@ -258,3 +258,52 @@ def test_card_without_insights_has_no_badges():
     html = job_card({"company": "A", "position": "B", "date": ""})
     assert "일째 게시" not in html
     assert "이 회사 공고" not in html
+
+
+# ==========================================
+# 오래된 모듈 자가 복구
+# ==========================================
+def test_freshness_silent_when_modules_are_current():
+    from jobhelper import freshness
+
+    assert freshness.ensure_fresh() == ""
+
+
+def test_freshness_detects_missing_attribute(monkeypatch):
+    """옛 모듈에는 없는 이름을 요구하면 오래된 것으로 판단해야 한다."""
+    from jobhelper import freshness
+
+    monkeypatch.setitem(
+        freshness.REQUIRED_ATTRS, "jobhelper.ui", ("존재하지_않는_함수",)
+    )
+    assert "jobhelper.ui" in freshness._missing()
+
+
+def test_freshness_recovers_by_reloading(monkeypatch):
+    """실제로 속성을 지웠다가 재로드로 되살아나는지 확인한다."""
+    from jobhelper import freshness, ui
+
+    original = ui.trend_bars
+    monkeypatch.delattr(ui, "trend_bars", raising=True)
+    assert "jobhelper.ui" in freshness._missing()
+
+    assert freshness.ensure_fresh() == ""  # 스스로 고쳤다
+    assert hasattr(ui, "trend_bars")
+    ui.trend_bars = original
+
+
+def test_freshness_gives_reboot_help_when_unfixable(monkeypatch):
+    from jobhelper import freshness
+
+    monkeypatch.setitem(
+        freshness.REQUIRED_ATTRS, "jobhelper.ui", ("절대_없는_이름",)
+    )
+    message = freshness.ensure_fresh()
+    assert "Reboot app" in message
+
+
+def test_freshness_ignores_modules_not_yet_imported(monkeypatch):
+    from jobhelper import freshness
+
+    monkeypatch.setitem(freshness.REQUIRED_ATTRS, "jobhelper.없는모듈", ("x",))
+    assert "jobhelper.없는모듈" not in freshness._missing()
