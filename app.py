@@ -189,7 +189,19 @@ with st.sidebar.expander("🏢 기업 규모 필터", expanded=False):
         disabled=not has_nps,
         help="NPS_SERVICE_KEY를 .env에 넣으면 켜집니다" if not has_nps else None,
     )
-    st.caption(company_info.CAVEAT if has_nps else "NPS_SERVICE_KEY를 넣으면 켜집니다.")
+    if has_nps:
+        st.caption(
+            "규모 정보가 조회된 공고에만 적용합니다. 조회는 한 번에 일부 회사만 "
+            "하므로(누적됨), 정보가 없는 공고는 걸러내지 않습니다."
+        )
+        st.caption(company_info.CAVEAT)
+    else:
+        st.caption("NPS_SERVICE_KEY를 넣으면 켜집니다.")
+    nps_enrich_limit = st.slider(
+        "한 번에 조회할 회사 수", 20, 200, 40, step=20, disabled=not has_nps,
+        help="많이 조회할수록 정보가 늘지만 수집이 느려집니다. 조회 결과는 "
+        "저장되어 다음 실행에 재사용됩니다.",
+    )
 
 with st.sidebar.expander("📰 블로그 피드", expanded=False):
     blog_input = st.text_input("네이버 블로그 ID (쉼표 구분)", value=", ".join(DEFAULT_BLOG_IDS))
@@ -296,6 +308,49 @@ def render_fit_tab(job: dict, prof) -> None:
     if result.actions:
         st.markdown("**📌 지원 전 준비**")
         for item in result.actions:
+            st.markdown(f"- {item}")
+
+
+def render_interview_tab(job: dict, prof) -> None:
+    """공고와 내가 저장한 자소서를 근거로 예상 면접 질문을 만든다."""
+    state_key = f"interview_{job['id']}"
+    if not _profile_gate():
+        return
+
+    letters = [
+        "[{}]\n{}".format(letter["question"], letter["answer"])
+        for letter in profile_mod.load_cover_letters(job["company"])
+        if letter.get("answer")
+    ]
+    if letters:
+        st.caption(f"저장된 자소서 {len(letters)}건을 함께 넘겨 질문을 만듭니다.")
+    else:
+        st.caption("자소서를 저장해 두면 그 내용까지 반영해 질문을 만듭니다.")
+
+    if st.button("🎤 예상 질문 만들기", key=f"itv_btn_{job['id']}"):
+        try:
+            with st.spinner("면접관 입장에서 질문을 뽑는 중..."):
+                st.session_state[state_key] = ai.prepare_interview(prof, job, letters)
+        except Exception as exc:
+            st.error(f"생성에 실패했습니다: {type(exc).__name__}")
+            st.caption(str(exc)[:300])
+            return
+
+    result = st.session_state.get(state_key)
+    if result is None:
+        return
+
+    if result.questions:
+        st.markdown("**예상 질문**")
+        for item in result.questions:
+            st.markdown(f"- {item}")
+    if result.tough_questions:
+        st.markdown("**⚠️ 약점을 파고드는 질문**")
+        for item in result.tough_questions:
+            st.markdown(f"- {item}")
+    if result.talking_points:
+        st.markdown("**📌 준비해 둘 답변 소재**")
+        for item in result.talking_points:
             st.markdown(f"- {item}")
 
 
@@ -454,7 +509,7 @@ for _name, _count, _warn in source_stats:
 blog_feed = load_blog(blog_ids, blog_limit) if blog_ids else []
 
 if has_nps and jobs:
-    jobs = enrich(jobs, 40)
+    jobs = enrich(jobs, nps_enrich_limit)
 
 new_keys = db.mark_seen([j["job_key"] for j in jobs] + [b["job_key"] for b in blog_feed])
 
@@ -477,7 +532,10 @@ def passes_filters(job: dict) -> bool:
         return False
     if min_employees:
         employees = (job.get("company_info") or {}).get("employees")
-        if employees is None or employees < min_employees:
+        # 국민연금 조회는 한 번에 일부 회사만 한다(호출 수 절약). 조회되지 않은
+        # 공고까지 걸러내면 조건과 무관하게 대부분이 사라지므로, 정보가 있는
+        # 공고에만 기준을 적용한다.
+        if employees is not None and employees < min_employees:
             return False
     left = days_left(parse_deadline(job.get("deadline", "")), today)
     if only_with_deadline and left is None:
@@ -515,6 +573,13 @@ if _nav == NAV_SEARCH:
             empty = [name for name, count, warn in source_stats if count == 0 and not warn]
             if empty:
                 st.caption(f"⚠️ 결과가 0건인 소스: {', '.join(empty)} — 검색어가 맞는지 확인하세요.")
+
+            if has_nps and min_employees:
+                known = sum(1 for j in jobs if (j.get("company_info") or {}).get("employees"))
+                st.caption(
+                    f"규모 정보가 있는 공고 {known:,}건에만 '최소 {min_employees:,}명' 기준을 "
+                    f"적용했습니다. 나머지 {len(jobs) - known:,}건은 정보가 없어 그대로 둡니다."
+                )
 
         tabs = st.tabs(CATEGORIES)
         for category, tab in zip(CATEGORIES, tabs):
@@ -648,13 +713,18 @@ if _nav == NAV_TRACKER:
         for job in saved_jobs:
             st.markdown(ui.saved_card(job), unsafe_allow_html=True)
             with st.expander(f"✏️ {job['company']} — 진행 상황 · 적합도 · 자소서", expanded=False):
-                tab_status, tab_fit, tab_letter = st.tabs(["진행 상황", "🎯 적합도 분석", "✍️ 자소서"])
+                tab_status, tab_fit, tab_letter, tab_itv = st.tabs(
+                    ["진행 상황", "🎯 적합도 분석", "✍️ 자소서", "🎤 면접 준비"]
+                )
 
                 with tab_fit:
                     render_fit_tab(job, my_profile)
 
                 with tab_letter:
                     render_letter_tab(job, my_profile)
+
+                with tab_itv:
+                    render_interview_tab(job, my_profile)
 
                 with tab_status:
                     edit_cols = st.columns([1.2, 1, 2])

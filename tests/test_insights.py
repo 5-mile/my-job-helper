@@ -307,3 +307,64 @@ def test_freshness_ignores_modules_not_yet_imported(monkeypatch):
 
     monkeypatch.setitem(freshness.REQUIRED_ATTRS, "jobhelper.없는모듈", ("x",))
     assert "jobhelper.없는모듈" not in freshness._missing()
+
+
+# ==========================================
+# 최소 직원 수 필터 의미 (규모 정보 없는 공고를 걸러내지 않는다)
+# ==========================================
+def _passes_min_employees(job, min_employees):
+    """app.py 의 필터 조건과 같은 규칙."""
+    if not min_employees:
+        return True
+    employees = (job.get("company_info") or {}).get("employees")
+    return not (employees is not None and employees < min_employees)
+
+
+def test_min_employees_keeps_jobs_without_company_info():
+    """국민연금 조회는 일부 회사만 하므로, 정보 없는 공고를 걸러내면 안 된다."""
+    unknown = {"company": "조회안된회사"}
+    assert _passes_min_employees(unknown, 300) is True
+
+
+def test_min_employees_filters_small_companies():
+    small = {"company_info": {"employees": 50}}
+    big = {"company_info": {"employees": 800}}
+    assert _passes_min_employees(small, 300) is False
+    assert _passes_min_employees(big, 300) is True
+
+
+def test_min_employees_zero_disables_filter():
+    assert _passes_min_employees({"company_info": {"employees": 1}}, 0) is True
+
+
+# ==========================================
+# 마감 알림 자동 실행 워크플로
+# ==========================================
+def test_deadline_alert_workflow_is_valid():
+    """앱은 클라우드에 있고 스케줄러가 없으므로 GitHub Actions로 돌린다."""
+    yaml = pytest.importorskip("yaml")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, ".github", "workflows", "deadline-alert.yml")
+    assert os.path.exists(path), "마감 알림 워크플로가 없습니다"
+
+    data = yaml.safe_load(open(path, encoding="utf-8"))
+    triggers = data.get("on") or data.get(True)  # YAML 에서 on 은 True 로 파싱된다
+    assert "schedule" in triggers
+    assert "workflow_dispatch" in triggers  # 수동 실행도 가능해야 한다
+
+    steps = data["jobs"]["notify"]["steps"]
+    body = str(steps)
+    assert "notify.py" in body
+    assert "DATABASE_URL" in body  # 보관함을 읽으려면 외부 DB가 필요하다
+
+
+def test_deadline_alert_skips_without_secrets():
+    """시크릿이 없을 때 매일 실패 알림이 오지 않도록 건너뛰어야 한다."""
+    yaml = pytest.importorskip("yaml")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, ".github", "workflows", "deadline-alert.yml")
+    data = yaml.safe_load(open(path, encoding="utf-8"))
+
+    steps = data["jobs"]["notify"]["steps"]
+    run_step = [s for s in steps if "notify.py" in str(s.get("run", ""))][0]
+    assert "ready == 'yes'" in run_step.get("if", "")
