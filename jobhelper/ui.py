@@ -50,6 +50,8 @@ CSS = """
     .bg-urgent     { background-color: rgba(248, 113, 113, 0.18); color: #FCA5A5; border: 1px solid rgba(248, 113, 113, 0.3); }
     .bg-new        { background-color: rgba(52, 211, 153, 0.18); color: #6EE7B7; border: 1px solid rgba(52, 211, 153, 0.3); }
     .bg-nps        { background-color: rgba(56, 189, 248, 0.14); color: #7DD3FC; border: 1px solid rgba(56, 189, 248, 0.28); }
+    .bg-stale      { background-color: rgba(251, 146, 60, 0.14); color: #FDBA74; border: 1px solid rgba(251, 146, 60, 0.28); }
+    .bg-bulk       { background-color: rgba(244, 114, 182, 0.13); color: #F9A8D4; border: 1px solid rgba(244, 114, 182, 0.26); }
 
     .company-title {
         font-size: 1.35rem;
@@ -80,6 +82,8 @@ CSS = """
         .bg-mid-corp   { background-color: #FDF4FF; color: #7E22CE; border: 1px solid #F5D0FE; }
         .bg-foreign    { background-color: #F0FDFA; color: #0F766E; border: 1px solid #99F6E4; }
         .bg-nps        { background-color: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }
+        .bg-stale      { background-color: #FFF7ED; color: #C2410C; border: 1px solid #FED7AA; }
+        .bg-bulk       { background-color: #FDF2F8; color: #BE185D; border: 1px solid #FBCFE8; }
     }
 
     div[data-testid="stHorizontalBlock"] button {
@@ -120,6 +124,16 @@ CSS = """
     }
     .status-cell.is-zero { opacity: 0.45; }
     .status-num { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+
+    /* 트렌드 막대 */
+    .trend-list { display: flex; flex-direction: column; gap: 6px; }
+    .trend-row { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
+    .trend-label { flex: 0 0 96px; color: #CBD5E1; overflow-wrap: anywhere; }
+    .trend-track { flex: 1 1 auto; height: 8px; border-radius: 4px;
+                   background: rgba(255,255,255,0.06); overflow: hidden; }
+    .trend-fill { height: 100%; border-radius: 4px;
+                  background: linear-gradient(90deg, #3B82F6, #60A5FA); }
+    .trend-value { flex: 0 0 52px; text-align: right; color: #94A3B8; font-variant-numeric: tabular-nums; }
     .status-label { font-size: 0.72rem; color: #94A3B8; margin-top: 2px; white-space: nowrap; }
 
     /* ============ 모바일 ============ */
@@ -157,6 +171,9 @@ CSS = """
         .card-link { color: #1D4ED8; }
         .status-cell { background: #F8FAFC; border: 1px solid #E2E8F0; }
         .status-label { color: #64748B; }
+        .trend-label { color: #334155; }
+        .trend-track { background: #E2E8F0; }
+        .trend-value { color: #64748B; }
     }
 </style>
 """
@@ -172,6 +189,24 @@ def status_pill(status: str) -> str:
         f'<span class="platform-badge" style="background:{color}22;color:{color};'
         f'border:1px solid {color}55;">{escape(status)}</span>'
     )
+
+
+def trend_bars(rows: list[tuple[str, int]], unit: str = "건") -> str:
+    """집계 결과를 막대로. 값이 없으면 빈 문자열."""
+    if not rows:
+        return ""
+    top = max(count for _, count in rows) or 1
+    lines = []
+    for label, count in rows:
+        pct = round(count / top * 100)
+        lines.append(
+            '<div class="trend-row">'
+            f'<div class="trend-label">{escape(str(label))}</div>'
+            f'<div class="trend-track"><div class="trend-fill" style="width:{pct}%;"></div></div>'
+            f'<div class="trend-value">{count:,}{escape(unit)}</div>'
+            "</div>"
+        )
+    return f'<div class="trend-list">{"".join(lines)}</div>'
 
 
 def status_strip(counts: dict[str, int]) -> str:
@@ -250,6 +285,14 @@ def job_card(
     if job.get("salary"):
         badges.append(badge(f"💵 {job['salary']}", "bg-welfare"))
     badges.extend(company_badges(job))
+
+    # 오래 걸려 있는 공고는 사람이 잘 안 붙는 자리일 수 있다는 신호
+    if job.get("long_listing"):
+        badges.append(badge(f"📌 {job.get('days_listed', 0)}일째 게시", "bg-stale"))
+    # 한 회사가 결과에 많이 등장하면 채용대행·파견일 가능성이 있다
+    if job.get("bulk_poster"):
+        badges.append(badge(f"🏷 이 회사 공고 {job.get('company_posting_count', 0)}건", "bg-bulk"))
+
     for welfare in (job.get("welfares") or [])[:3]:
         badges.append(badge(welfare, "bg-welfare"))
     if is_saved:

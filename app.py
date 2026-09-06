@@ -8,7 +8,10 @@ from datetime import date
 
 import streamlit as st
 
-from jobhelper import ai, company_info, db, notify, profile as profile_mod, settings, storage, ui
+from jobhelper import (
+    ai, company_info, db, insights, notify, profile as profile_mod,
+    settings, storage, ui,
+)
 from jobhelper.config import (
     APPLICATION_STATUSES,
     CATEGORIES,
@@ -51,6 +54,7 @@ try:
     company_info.init_cache()
     notify.init_alert_log()
     profile_mod.init_profile_tables()
+    insights.init_insight_tables()
 except Exception as exc:
     st.error(f"❌ 데이터베이스에 연결하지 못했습니다 — {type(exc).__name__}")
     if _direct_warning:
@@ -151,6 +155,23 @@ user_location = st.sidebar.text_input("희망 근무 지역 (우선 배치)", va
 only_with_deadline = st.sidebar.checkbox("마감일이 있는 공고만 보기", value=False)
 urgent_only = st.sidebar.checkbox("마감 7일 이내만 보기", value=False)
 hide_saved = st.sidebar.checkbox("이미 보관한 공고 숨기기", value=False)
+hide_bulk = st.sidebar.checkbox(
+    "다수 공고 회사 숨기기",
+    value=False,
+    help="한 회사가 검색 결과에 여러 건 올린 경우입니다. 채용대행·파견업체인 "
+    "경우가 많아, 직접고용을 찾는다면 걸러낼 수 있습니다.",
+)
+agency_threshold = st.sidebar.number_input(
+    "다수 공고 기준 (건)", min_value=3, max_value=50,
+    value=insights.AGENCY_POSTING_THRESHOLD, step=1,
+    help="한 회사가 이 건수 이상 올리면 표시합니다.",
+)
+hide_stale = st.sidebar.checkbox(
+    f"{insights.LONG_LISTING_DAYS}일 이상 게시된 공고 숨기기",
+    value=False,
+    help="오래 걸려 있는 공고는 사람이 잘 안 붙는 자리일 수 있습니다. "
+    "이력이 쌓인 뒤부터 판별됩니다.",
+)
 
 has_nps = bool(settings.nps_service_key())
 min_employees = st.sidebar.number_input(
@@ -269,9 +290,22 @@ if has_nps and jobs:
 
 new_keys = db.mark_seen([j["job_key"] for j in jobs] + [b["job_key"] for b in blog_feed])
 
+# 공고 이력을 쌓아 '며칠째 게시 중'을 알 수 있게 한다 (추가 키 불필요)
+if jobs:
+    try:
+        insights.record_sightings(jobs, today)
+        jobs = insights.annotate_history(jobs, today)
+    except Exception as exc:  # 이력은 부가 기능이라 실패해도 목록은 보여준다
+        st.caption(f"공고 이력 기록을 건너뛰었습니다 ({type(exc).__name__}).")
+    jobs = insights.annotate_agencies(jobs, agency_threshold)
+
 
 def passes_filters(job: dict) -> bool:
     if hide_saved and f"{job['company']}::{job['position']}" in saved:
+        return False
+    if hide_bulk and job.get("bulk_poster"):
+        return False
+    if hide_stale and job.get("long_listing"):
         return False
     if min_employees:
         employees = (job.get("company_info") or {}).get("employees")
@@ -623,6 +657,62 @@ else:
 
 
 st.divider()
+
+# ------------------------------------------
+# 하단 - 시장 트렌드 (수집한 공고 집계, 추가 키 불필요)
+# ------------------------------------------
+if jobs:
+    stats = insights.summarize(jobs)
+    st.markdown("### 📊 지금 시장 (수집한 공고 기준)")
+
+    head = st.columns(4)
+    head[0].metric("수집 공고", f"{stats.total:,}")
+    head[1].metric("직접고용 추정", f"{stats.direct_hire_estimate:,}",
+                   help="다수 공고 회사를 제외한 건수입니다.")
+    head[2].metric("다수 공고 회사 건", f"{stats.bulk_poster_jobs:,}")
+    head[3].metric(f"{insights.LONG_LISTING_DAYS}일+ 게시", f"{stats.long_listings:,}",
+                   help="이력이 쌓인 뒤부터 집계됩니다. 처음 실행하면 0입니다.")
+
+    t_skill, t_loc, t_emp, t_bulk = st.tabs(
+        ["🔧 자격증·기술", "📍 지역", "📄 고용형태", "🏷 다수 공고 회사"]
+    )
+
+    with t_skill:
+        rows = insights.skill_trends(jobs)
+        if rows:
+            st.caption("공고 문구에 등장한 횟수입니다. 무엇을 준비할지 정하는 데 참고하세요.")
+            st.markdown(ui.trend_bars(rows), unsafe_allow_html=True)
+        else:
+            st.info("집계할 키워드가 없습니다.")
+
+    with t_loc:
+        rows = insights.location_trends(jobs)
+        if rows:
+            st.markdown(ui.trend_bars(rows), unsafe_allow_html=True)
+        else:
+            st.info("지역 정보가 없습니다.")
+
+    with t_emp:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.caption("고용형태")
+            st.markdown(ui.trend_bars(insights.employment_trends(jobs)), unsafe_allow_html=True)
+        with col_b:
+            st.caption("경력 조건")
+            st.markdown(ui.trend_bars(insights.career_trends(jobs)), unsafe_allow_html=True)
+
+    with t_bulk:
+        rows = insights.top_bulk_posters(jobs, agency_threshold)
+        if rows:
+            st.caption(
+                "한 회사가 검색 결과에 여러 건 올린 경우입니다. 채용대행·파견업체인 "
+                "경우가 많지만, 실제로 채용 규모가 큰 회사일 수도 있으니 확인 후 판단하세요."
+            )
+            st.markdown(ui.trend_bars(rows), unsafe_allow_html=True)
+        else:
+            st.info(f"{agency_threshold}건 이상 올린 회사가 없습니다.")
+
+    st.divider()
 
 # ------------------------------------------
 # 하단 - 내 프로필 (자소서·적합도의 재료)
