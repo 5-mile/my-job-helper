@@ -13,4 +13,4 @@ env/
 .env
 
 # setup_cloud.py 가 만드는 붙여넣기용 파일 (비밀 값 포함)
-streamlit_secrets_*.toml
+streamlit_secrets*.toml

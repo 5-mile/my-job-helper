@@ -8,7 +8,7 @@ from datetime import date
 
 import streamlit as st
 
-from jobhelper import company_info, db, notify, settings, storage, ui
+from jobhelper import ai, company_info, db, notify, profile as profile_mod, settings, storage, ui
 from jobhelper.config import (
     APPLICATION_STATUSES,
     CATEGORIES,
@@ -44,6 +44,7 @@ try:
     db.init_db()
     company_info.init_cache()
     notify.init_alert_log()
+    profile_mod.init_profile_tables()
 except Exception as exc:
     st.error(f"❌ 데이터베이스에 연결하지 못했습니다 — {type(exc).__name__}")
     if _direct_warning:
@@ -308,6 +309,140 @@ with col_right:
 
 st.divider()
 
+
+# ==========================================
+# 내 프로필 · AI 기능
+# ==========================================
+my_profile = profile_mod.load_profile()
+ai_ready = ai.is_available()
+
+
+def _profile_gate() -> bool:
+    """AI 기능을 쓸 수 있는 상태인지 확인하고, 아니면 이유를 표시한다."""
+    if not ai_ready:
+        st.info(
+            "이 기능은 Claude API 키가 필요합니다. `.env`(또는 Streamlit Secrets)에 "
+            "`ANTHROPIC_API_KEY`를 넣으면 켜집니다. "
+            "키는 https://console.anthropic.com 에서 발급합니다."
+        )
+        return False
+    if not my_profile.is_usable():
+        missing = ", ".join(my_profile.missing_parts())
+        st.warning(
+            f"먼저 아래 '내 프로필'을 채워주세요. 부족한 항목: {missing}\n\n"
+            "없는 경력을 지어내지 않도록, 프로필에 적힌 사실만 재료로 씁니다."
+        )
+        return False
+    return True
+
+
+def render_fit_tab(job: dict, prof) -> None:
+    state_key = f"fit_{job['id']}"
+    if not _profile_gate():
+        return
+
+    if st.button("🎯 적합도 분석하기", key=f"fit_btn_{job['id']}"):
+        try:
+            with st.spinner("공고와 내 프로필을 비교하는 중..."):
+                st.session_state[state_key] = ai.analyze_fit(prof, job)
+        except Exception as exc:
+            st.error(f"분석에 실패했습니다: {type(exc).__name__}")
+            st.caption(str(exc)[:300])
+            return
+
+    result = st.session_state.get(state_key)
+    if result is None:
+        st.caption("버튼을 누르면 내 프로필과 이 공고를 비교합니다.")
+        return
+
+    head = st.columns([1, 3])
+    head[0].metric("적합도", f"{result.score}점")
+    head[1].markdown(f"**{result.verdict}**\n\n{result.summary}")
+
+    if result.matches:
+        st.markdown("**✅ 맞는 지점**")
+        for item in result.matches:
+            st.markdown(f"- {item}")
+    if result.gaps:
+        st.markdown("**⚠️ 부족하거나 확인이 필요한 점**")
+        for item in result.gaps:
+            st.markdown(f"- {item}")
+    if result.actions:
+        st.markdown("**📌 지원 전 준비**")
+        for item in result.actions:
+            st.markdown(f"- {item}")
+
+
+def render_letter_tab(job: dict, prof) -> None:
+    saved_letters = profile_mod.load_cover_letters(job["company"])
+    if saved_letters:
+        st.caption(f"저장된 자소서 {len(saved_letters)}건")
+        for letter in saved_letters:
+            with st.expander(f"📄 {letter['question']}", expanded=False):
+                st.text_area(
+                    "내용", value=letter["answer"], height=200,
+                    key=f"saved_letter_{letter['id']}", label_visibility="collapsed",
+                )
+                st.caption(f"{len(letter['answer'])}자 · 수정 {letter['updated_at'][:10]}")
+                if st.button("🗑️ 삭제", key=f"del_letter_{letter['id']}"):
+                    profile_mod.delete_cover_letter(letter["id"])
+                    st.rerun()
+        st.divider()
+
+    if not _profile_gate():
+        return
+
+    q_col, len_col = st.columns([2, 1])
+    with q_col:
+        question = st.selectbox(
+            "자소서 문항",
+            ai.DEFAULT_QUESTIONS + ["(직접 입력)"],
+            key=f"q_sel_{job['id']}",
+        )
+        if question == "(직접 입력)":
+            question = st.text_input(
+                "문항을 그대로 입력하세요", key=f"q_custom_{job['id']}",
+                placeholder="예: 입사 후 이루고 싶은 목표를 기술하시오",
+            )
+    with len_col:
+        max_chars = st.number_input(
+            "분량 (자)", min_value=200, max_value=2000, value=700, step=100,
+            key=f"len_{job['id']}",
+        )
+
+    draft_key = f"draft_{job['id']}"
+    if st.button("✍️ 초안 생성", key=f"draft_btn_{job['id']}", disabled=not question):
+        placeholder = st.empty()
+        try:
+            with st.spinner("초안을 쓰는 중..."):
+                text = ai.draft_cover_letter(
+                    prof, job, question, max_chars=int(max_chars),
+                    on_text=lambda partial: placeholder.markdown(partial),
+                )
+            placeholder.empty()
+            st.session_state[draft_key] = text
+        except Exception as exc:
+            placeholder.empty()
+            st.error(f"생성에 실패했습니다: {type(exc).__name__}")
+            st.caption(str(exc)[:300])
+            return
+
+    draft = st.session_state.get(draft_key, "")
+    if draft:
+        edited = st.text_area(
+            "초안 (그대로 쓰지 말고 본인 표현으로 다듬으세요)",
+            value=draft, height=320, key=f"draft_area_{job['id']}",
+        )
+        st.caption(f"{len(edited)}자")
+        if st.button("💾 이 자소서 저장", key=f"save_letter_{job['id']}"):
+            profile_mod.save_cover_letter(
+                job["id"], job["company"], question, edited
+            )
+            st.session_state.pop(draft_key, None)
+            st.toast("저장했습니다.")
+            st.rerun()
+
+
 # ------------------------------------------
 # 하단 - 보관함 & 지원 현황 트래커
 # ------------------------------------------
@@ -356,38 +491,141 @@ if not saved_jobs:
 else:
     for job in saved_jobs:
         st.markdown(ui.saved_card(job), unsafe_allow_html=True)
-        with st.expander(f"✏️ {job['company']} 진행 상황 편집", expanded=False):
-            edit_cols = st.columns([1.2, 1, 2])
-            with edit_cols[0]:
-                current = job.get("status", APPLICATION_STATUSES[0])
-                index = APPLICATION_STATUSES.index(current) if current in APPLICATION_STATUSES else 0
-                new_status = st.selectbox(
-                    "진행 상태", APPLICATION_STATUSES, index=index, key=f"status_{job['id']}"
-                )
-            with edit_cols[1]:
-                applied_at = st.text_input(
-                    "지원일 (YYYY-MM-DD)", value=job.get("applied_at", ""), key=f"applied_{job['id']}"
-                )
-            with edit_cols[2]:
-                memo = st.text_area(
-                    "메모 (자소서 소재, 면접 일정 등)",
-                    value=job.get("memo", ""),
-                    key=f"memo_{job['id']}",
-                    height=80,
-                )
+        with st.expander(f"✏️ {job['company']} — 진행 상황 · 적합도 · 자소서", expanded=False):
+            tab_status, tab_fit, tab_letter = st.tabs(["진행 상황", "🎯 적합도 분석", "✍️ 자소서"])
 
-            action_cols = st.columns([1, 1, 2])
-            with action_cols[0]:
-                if st.button("💾 저장", key=f"update_{job['id']}"):
-                    db.update_job(
-                        job["id"], status=new_status, applied_at=applied_at.strip(), memo=memo
+            with tab_fit:
+                render_fit_tab(job, my_profile)
+
+            with tab_letter:
+                render_letter_tab(job, my_profile)
+
+            with tab_status:
+                edit_cols = st.columns([1.2, 1, 2])
+                with edit_cols[0]:
+                    current = job.get("status", APPLICATION_STATUSES[0])
+                    index = APPLICATION_STATUSES.index(current) if current in APPLICATION_STATUSES else 0
+                    new_status = st.selectbox(
+                        "진행 상태", APPLICATION_STATUSES, index=index, key=f"status_{job['id']}"
                     )
-                    st.toast("업데이트했습니다.")
-                    st.rerun()
-            with action_cols[1]:
-                if st.button("🗑️ 삭제", key=f"delete_{job['id']}"):
-                    db.delete_job(job["id"])
-                    st.rerun()
-            with action_cols[2]:
-                if job.get("link"):
-                    st.link_button("🌐 공고 열기", url=job["link"])
+                with edit_cols[1]:
+                    applied_at = st.text_input(
+                        "지원일 (YYYY-MM-DD)", value=job.get("applied_at", ""), key=f"applied_{job['id']}"
+                    )
+                with edit_cols[2]:
+                    memo = st.text_area(
+                        "메모 (자소서 소재, 면접 일정 등)",
+                        value=job.get("memo", ""),
+                        key=f"memo_{job['id']}",
+                        height=80,
+                    )
+
+                action_cols = st.columns([1, 1, 2])
+                with action_cols[0]:
+                    if st.button("💾 저장", key=f"update_{job['id']}"):
+                        db.update_job(
+                            job["id"], status=new_status, applied_at=applied_at.strip(), memo=memo
+                        )
+                        st.toast("업데이트했습니다.")
+                        st.rerun()
+                with action_cols[1]:
+                    if st.button("🗑️ 삭제", key=f"delete_{job['id']}"):
+                        db.delete_job(job["id"])
+                        st.rerun()
+                with action_cols[2]:
+                    if job.get("link"):
+                        st.link_button("🌐 공고 열기", url=job["link"])
+
+
+st.divider()
+
+# ------------------------------------------
+# 하단 - 내 프로필 (자소서·적합도의 재료)
+# ------------------------------------------
+st.markdown("### 🧑 내 프로필")
+st.caption(
+    "자소서 초안과 적합도 분석은 여기 적힌 사실만 재료로 씁니다. "
+    "구체적으로 쓸수록 결과가 좋아지고, 없는 내용은 지어내지 않습니다."
+)
+
+with st.expander(
+    "프로필 편집" + ("" if my_profile.is_usable() else "  ⚠️ 아직 비어 있습니다"),
+    expanded=not my_profile.is_usable(),
+):
+    p_col1, p_col2 = st.columns(2)
+    with p_col1:
+        p_name = st.text_input("이름", value=my_profile.name)
+        p_desired = st.text_input(
+            "희망 직무", value=my_profile.desired_role, placeholder="예: 생산관리, 설비보전"
+        )
+        p_education = st.text_input(
+            "학력", value=my_profile.education, placeholder="예: OO공업고등학교 기계과 졸업"
+        )
+        p_certificates = st.text_input(
+            "자격증", value=my_profile.certificates, placeholder="예: 지게차운전기능사, 위험물기능사"
+        )
+    with p_col2:
+        p_career = st.text_area(
+            "경력 사항",
+            value=my_profile.career,
+            height=120,
+            placeholder="예: OO산업 생산직 2년 (2023.03~2025.02)\n- 조립 라인 오퍼레이터, 3교대 근무",
+        )
+        p_skills = st.text_input(
+            "보유 기술", value=my_profile.skills, placeholder="예: 지게차 운전, 설비 점검, 엑셀"
+        )
+        p_strengths = st.text_input(
+            "본인이 생각하는 강점", value=my_profile.strengths, placeholder="예: 꼼꼼한 기록 관리"
+        )
+
+    st.markdown("**경험 에피소드** — 자소서에서 근거로 쓰입니다. 한 개라도 있으면 결과가 크게 달라집니다.")
+    episode_count = st.number_input(
+        "에피소드 개수", min_value=1, max_value=8,
+        value=max(1, len(my_profile.filled_episodes())), step=1,
+    )
+
+    new_episodes = []
+    for idx in range(int(episode_count)):
+        existing = my_profile.episodes[idx] if idx < len(my_profile.episodes) else profile_mod.Episode()
+        st.markdown(f"---\n**에피소드 {idx + 1}**")
+        e_title = st.text_input(
+            "한 줄 제목", value=existing.title, key=f"ep_title_{idx}",
+            placeholder="예: 설비 고장 대응으로 라인 정지 시간 단축",
+        )
+        e_cols = st.columns(3)
+        with e_cols[0]:
+            e_situation = st.text_area(
+                "상황", value=existing.situation, key=f"ep_sit_{idx}", height=100,
+                placeholder="어떤 문제/상황이었는지",
+            )
+        with e_cols[1]:
+            e_action = st.text_area(
+                "내가 한 행동", value=existing.action, key=f"ep_act_{idx}", height=100,
+                placeholder="본인이 직접 한 일",
+            )
+        with e_cols[2]:
+            e_result = st.text_area(
+                "결과", value=existing.result, key=f"ep_res_{idx}", height=100,
+                placeholder="가능하면 숫자로 (예: 30분 → 10분)",
+            )
+        new_episodes.append(
+            profile_mod.Episode(
+                title=e_title, situation=e_situation, action=e_action, result=e_result
+            )
+        )
+
+    if st.button("💾 프로필 저장", type="primary"):
+        profile_mod.save_profile(
+            profile_mod.Profile(
+                name=p_name,
+                career=p_career,
+                education=p_education,
+                certificates=p_certificates,
+                skills=p_skills,
+                desired_role=p_desired,
+                strengths=p_strengths,
+                episodes=new_episodes,
+            )
+        )
+        st.toast("프로필을 저장했습니다.")
+        st.rerun()

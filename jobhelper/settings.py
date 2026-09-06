@@ -92,6 +92,11 @@ def email_config() -> dict[str, str] | None:
     return None
 
 
+def anthropic_api_key() -> str | None:
+    """Claude API 키. 자소서·적합도 분석에만 쓰인다."""
+    return get("ANTHROPIC_API_KEY")
+
+
 def database_url() -> str | None:
     """PostgreSQL 접속 문자열. 없으면 로컬 SQLite를 쓴다."""
     return get("DATABASE_URL")
@@ -106,6 +111,8 @@ def missing_keys() -> list[str]:
         missing.append("NPS_SERVICE_KEY (기업 규모·보수 정보)")
     if not worknet_auth_key():
         missing.append("WORKNET_AUTH_KEY (워크넷 공고)")
+    if not anthropic_api_key():
+        missing.append("ANTHROPIC_API_KEY (자소서 초안·적합도 분석)")
     if not telegram_config() and not email_config():
         missing.append("TELEGRAM_* 또는 SMTP_* (마감 알림)")
     return missing
