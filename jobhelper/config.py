@@ -63,10 +63,16 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
+# 사람인 정렬 파라미터는 `recruitSort` 이고, 값은 아래 코드다.
+# (예전 코드는 `sort=rc` 를 보냈는데 사람인이 그 파라미터를 무시해서
+#  어떤 정렬을 골라도 같은 결과가 나왔다.)
 SARAMIN_SORT_OPTIONS = {
-    "인기순 (조회수 기준)": "rc",
-    "최근 등록일순": "rd",
-    "마감일순 (임박 공고 우선)": "pa",
+    "관련도순 (기본)": "relation",
+    "최근 등록일순": "reg_dt",
+    "마감일순 (임박 공고 우선)": "closing_dt",
 }
+
+# 여러 정렬을 합치면 서로 다른 공고가 잡혀 수집량이 늘어난다.
+SARAMIN_ALL_SORTS = ["relation", "reg_dt", "closing_dt"]
 
 REQUEST_TIMEOUT = 8

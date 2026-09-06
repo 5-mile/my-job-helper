@@ -23,9 +23,10 @@ from ..dates import format_dday, parse_deadline
 
 log = logging.getLogger(__name__)
 
+# 정렬은 `recruitSort` 로 보내야 한다. `sort` 는 무시된다.
 SEARCH_URL = (
     "https://www.saramin.co.kr/zf_user/search/recruit"
-    "?searchword={keyword}&sort={sort}&recruitPage={page}&Page={page}"
+    "?searchword={keyword}&recruitSort={sort}&recruitPage={page}"
 )
 
 # 마크업이 바뀌어도 버티도록 앞에서부터 차례로 시도한다.
@@ -180,11 +181,15 @@ def _fetch_page(keyword: str, sort_code: str, page: int) -> tuple[list[dict[str,
 
 def fetch_saramin_jobs_detailed(
     keywords: list[str] | str,
-    sort_code: str = "rc",
+    sort_code: str | list[str] = "relation",
     pages: int = 3,
     exclude: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], FetchDiagnostics]:
-    """공고 목록과 수집 진단 정보를 함께 돌려준다."""
+    """공고 목록과 수집 진단 정보를 함께 돌려준다.
+
+    ``sort_code`` 에 여러 정렬을 주면 각각 수집해 합친다. 사람인은 정렬마다
+    서로 다른 공고를 보여주므로, 3종을 합치면 같은 페이지 수로 약 3배가 모인다.
+    """
     diagnostics = FetchDiagnostics()
 
     if isinstance(keywords, str):
@@ -193,12 +198,20 @@ def fetch_saramin_jobs_detailed(
     if not keywords:
         return [], diagnostics
 
-    tasks = [(kw, page) for kw in keywords for page in range(1, max(1, pages) + 1)]
+    sorts = [sort_code] if isinstance(sort_code, str) else list(sort_code)
+    sorts = [s for s in sorts if s] or ["relation"]
+
+    tasks = [
+        (kw, srt, page)
+        for kw in keywords
+        for srt in sorts
+        for page in range(1, max(1, pages) + 1)
+    ]
     diagnostics.pages_requested = len(tasks)
 
     collected: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=min(8, len(tasks))) as executor:
-        results = executor.map(lambda t: _fetch_page(t[0], sort_code, t[1]), tasks)
+        results = executor.map(lambda t: _fetch_page(t[0], t[1], t[2]), tasks)
         for jobs, selector, error in results:
             if error:
                 diagnostics.pages_failed += 1
@@ -223,7 +236,7 @@ def fetch_saramin_jobs_detailed(
 
 def fetch_saramin_jobs(
     keywords: list[str] | str,
-    sort_code: str = "rc",
+    sort_code: str | list[str] = "relation",
     pages: int = 3,
     exclude: list[str] | None = None,
 ) -> list[dict[str, Any]]:

@@ -13,6 +13,7 @@ from jobhelper.config import (
     APPLICATION_STATUSES,
     CATEGORIES,
     DEFAULT_BLOG_IDS,
+    SARAMIN_ALL_SORTS,
     SARAMIN_SORT_OPTIONS,
 )
 from jobhelper.dates import days_left, parse_deadline
@@ -65,8 +66,12 @@ except Exception as exc:
 # 데이터 수집 (캐시)
 # ==========================================
 @st.cache_data(ttl=600, show_spinner="사람인 공고를 수집하는 중입니다...")
-def load_saramin(keywords: tuple[str, ...], sort_code: str, pages: int, exclude: tuple[str, ...]):
-    jobs, diagnostics = fetch_saramin_jobs_detailed(list(keywords), sort_code, pages, list(exclude))
+def load_saramin(
+    keywords: tuple[str, ...], sort_codes: tuple[str, ...], pages: int, exclude: tuple[str, ...]
+):
+    jobs, diagnostics = fetch_saramin_jobs_detailed(
+        list(keywords), list(sort_codes), pages, list(exclude)
+    )
     return jobs, diagnostics.warning
 
 
@@ -96,8 +101,16 @@ exclude_input = st.sidebar.text_input(
     "제외 키워드 (쉼표로 여러 개)", value="", help="공고명·회사명·직무에 이 단어가 들어가면 숨깁니다"
 )
 sort_display = st.sidebar.selectbox("정렬 조건", list(SARAMIN_SORT_OPTIONS))
-sort_code = SARAMIN_SORT_OPTIONS[sort_display]
-pages = st.sidebar.slider("검색어당 수집 페이지 수", 1, 5, 3)
+pages = st.sidebar.slider("검색어당 수집 페이지 수", 1, 15, 3)
+
+wide_net = st.sidebar.checkbox(
+    "정렬 3종 합쳐서 더 많이 수집",
+    value=False,
+    help="사람인은 정렬마다 다른 공고를 보여줍니다. 3종을 합치면 약 3배가 모이지만 "
+    "수집 시간도 3배가 됩니다.",
+)
+sort_codes = tuple(SARAMIN_ALL_SORTS) if wide_net else (SARAMIN_SORT_OPTIONS[sort_display],)
+st.sidebar.caption(f"사람인 요청 {len(sort_codes) * pages}건 × 검색어 수")
 
 has_worknet = bool(settings.worknet_auth_key())
 use_worknet = st.sidebar.checkbox(
@@ -189,7 +202,7 @@ saved = db.saved_keys()
 jobs: list = []
 fetch_warning = ""
 if keywords:
-    saramin_jobs, fetch_warning = load_saramin(keywords, sort_code, pages, excludes)
+    saramin_jobs, fetch_warning = load_saramin(keywords, sort_codes, pages, excludes)
     jobs.extend(saramin_jobs)
     if use_worknet and has_worknet:
         jobs.extend(load_worknet(keywords, pages, excludes))

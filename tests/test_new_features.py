@@ -290,3 +290,68 @@ def test_get_bool(monkeypatch):
     assert settings.get_bool("FLAG_ON") is True
     assert settings.get_bool("FLAG_OFF") is False
     assert settings.get_bool("FLAG_UNSET", default=True) is True
+
+
+# --- 사람인 정렬 파라미터 --------------------------------------------------
+def test_search_url_uses_recruit_sort():
+    """사람인은 `sort` 를 무시한다. `recruitSort` 로 보내야 정렬이 먹는다."""
+    from jobhelper.scrapers.saramin import SEARCH_URL
+
+    url = SEARCH_URL.format(keyword="생산", sort="reg_dt", page=2)
+    assert "recruitSort=reg_dt" in url
+    assert "&sort=" not in url
+    assert "recruitPage=2" in url
+
+
+def test_sort_options_use_valid_codes():
+    """UI에 노출되는 정렬 코드가 사람인이 실제로 받는 값이어야 한다."""
+    from jobhelper.config import SARAMIN_ALL_SORTS, SARAMIN_SORT_OPTIONS
+
+    valid = {"relation", "reg_dt", "closing_dt"}
+    assert set(SARAMIN_SORT_OPTIONS.values()) <= valid
+    assert set(SARAMIN_ALL_SORTS) == valid
+
+
+def test_multiple_sorts_multiply_requests(monkeypatch):
+    """정렬을 여러 개 주면 정렬 × 페이지 만큼 요청한다."""
+    from jobhelper.scrapers import saramin
+
+    calls = []
+
+    def fake_page(keyword, sort_code, page):
+        calls.append((keyword, sort_code, page))
+        return [], "", ""
+
+    monkeypatch.setattr(saramin, "_fetch_page", fake_page)
+    _, diag = saramin.fetch_saramin_jobs_detailed(["생산"], ["relation", "reg_dt"], pages=3)
+
+    assert len(calls) == 6  # 정렬 2종 × 3페이지
+    assert diag.pages_requested == 6
+    assert {c[1] for c in calls} == {"relation", "reg_dt"}
+
+
+def test_single_sort_string_still_works(monkeypatch):
+    from jobhelper.scrapers import saramin
+
+    calls = []
+    monkeypatch.setattr(
+        saramin, "_fetch_page",
+        lambda k, s, p: (calls.append((k, s, p)), ([], "", ""))[1],
+    )
+    saramin.fetch_saramin_jobs_detailed(["생산"], "reg_dt", pages=2)
+
+    assert len(calls) == 2
+    assert {c[1] for c in calls} == {"reg_dt"}
+
+
+def test_empty_sort_falls_back_to_default(monkeypatch):
+    from jobhelper.scrapers import saramin
+
+    calls = []
+    monkeypatch.setattr(
+        saramin, "_fetch_page",
+        lambda k, s, p: (calls.append((k, s, p)), ([], "", ""))[1],
+    )
+    saramin.fetch_saramin_jobs_detailed(["생산"], [], pages=1)
+
+    assert [c[1] for c in calls] == ["relation"]
