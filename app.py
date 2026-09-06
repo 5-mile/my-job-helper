@@ -20,6 +20,8 @@ from jobhelper.dates import days_left, parse_deadline
 from jobhelper.scrapers.naver_blog import fetch_blog_feed
 from jobhelper.scrapers.saramin import fetch_saramin_jobs_detailed, group_by_category
 from jobhelper.scrapers.worknet import fetch_worknet_jobs
+from jobhelper.scrapers.saramin_api import fetch_saramin_api_jobs
+from jobhelper.scrapers.publicjobs import fetch_public_jobs
 
 st.set_page_config(
     page_title="통합 채용 정보 및 지원 현황 관리",
@@ -80,6 +82,16 @@ def load_worknet(keywords: tuple[str, ...], pages: int, exclude: tuple[str, ...]
     return fetch_worknet_jobs(list(keywords), pages=pages, exclude=list(exclude))
 
 
+@st.cache_data(ttl=600, show_spinner="사람인 공식 API로 수집하는 중입니다...")
+def load_saramin_api(keywords: tuple[str, ...], pages: int, exclude: tuple[str, ...]):
+    return fetch_saramin_api_jobs(list(keywords), pages=pages, exclude=list(exclude))
+
+
+@st.cache_data(ttl=600, show_spinner="공공기관 채용정보를 수집하는 중입니다...")
+def load_public_jobs(keywords: tuple[str, ...], pages: int, exclude: tuple[str, ...]):
+    return fetch_public_jobs(list(keywords), pages=pages, exclude=list(exclude))
+
+
 @st.cache_data(ttl=600, show_spinner="블로그 피드를 정제하는 중입니다...")
 def load_blog(blog_ids: tuple[str, ...], limit: int):
     return fetch_blog_feed(list(blog_ids), limit)
@@ -112,12 +124,23 @@ wide_net = st.sidebar.checkbox(
 sort_codes = tuple(SARAMIN_ALL_SORTS) if wide_net else (SARAMIN_SORT_OPTIONS[sort_display],)
 st.sidebar.caption(f"사람인 요청 {len(sort_codes) * pages}건 × 검색어 수")
 
+st.sidebar.markdown("**공고 소스**")
 has_worknet = bool(settings.worknet_auth_key())
+has_saramin_api = bool(settings.saramin_api_key())
+has_public = bool(settings.public_jobs_key())
+
+use_scrape = st.sidebar.checkbox("사람인 (웹 수집)", value=True)
+use_saramin_api = st.sidebar.checkbox(
+    "사람인 공식 API", value=has_saramin_api, disabled=not has_saramin_api,
+    help="SARAMIN_API_KEY가 필요합니다" if not has_saramin_api else None,
+)
 use_worknet = st.sidebar.checkbox(
-    "워크넷 공고 함께 보기",
-    value=has_worknet,
-    disabled=not has_worknet,
-    help="WORKNET_AUTH_KEY를 .env에 넣으면 켜집니다" if not has_worknet else None,
+    "워크넷", value=has_worknet, disabled=not has_worknet,
+    help="WORKNET_AUTH_KEY가 필요합니다" if not has_worknet else None,
+)
+use_public = st.sidebar.checkbox(
+    "공공기관 (잡알리오)", value=has_public, disabled=not has_public,
+    help="PUBLIC_JOBS_KEY가 필요합니다" if not has_public else None,
 )
 
 st.sidebar.markdown("### 🎚️ 필터")
@@ -200,15 +223,40 @@ st.divider()
 saved = db.saved_keys()
 
 jobs: list = []
-fetch_warning = ""
-if keywords:
-    saramin_jobs, fetch_warning = load_saramin(keywords, sort_codes, pages, excludes)
-    jobs.extend(saramin_jobs)
-    if use_worknet and has_worknet:
-        jobs.extend(load_worknet(keywords, pages, excludes))
+source_stats: list[tuple[str, int, str]] = []  # (소스명, 건수, 경고)
 
-if fetch_warning:
-    st.error(f"⚠️ {fetch_warning}")
+if keywords:
+    if use_scrape:
+        got, warn = load_saramin(keywords, sort_codes, pages, excludes)
+        jobs.extend(got)
+        source_stats.append(("사람인 (웹)", len(got), warn))
+    if use_saramin_api and has_saramin_api:
+        got, warn = load_saramin_api(keywords, pages, excludes)
+        jobs.extend(got)
+        source_stats.append(("사람인 API", len(got), warn))
+    if use_worknet and has_worknet:
+        got = load_worknet(keywords, pages, excludes)
+        jobs.extend(got)
+        source_stats.append(("워크넷", len(got), ""))
+    if use_public and has_public:
+        got, warn = load_public_jobs(keywords, pages, excludes)
+        jobs.extend(got)
+        source_stats.append(("공공기관", len(got), warn))
+
+# 소스 간 중복 제거 (같은 공고가 여러 소스에 있을 수 있다)
+_seen_keys: set[str] = set()
+_deduped = []
+for _job in jobs:
+    if _job["job_key"] in _seen_keys:
+        continue
+    _seen_keys.add(_job["job_key"])
+    _deduped.append(_job)
+duplicates_removed = len(jobs) - len(_deduped)
+jobs = _deduped
+
+for _name, _count, _warn in source_stats:
+    if _warn:
+        st.error(f"⚠️ {_name}: {_warn}")
 
 blog_feed = load_blog(blog_ids, blog_limit) if blog_ids else []
 
@@ -249,8 +297,17 @@ col_left, col_right = st.columns([1.15, 1])
 # ------------------------------------------
 with col_left:
     total_shown = sum(len([j for j in v if passes_filters(j)]) for v in grouped.values())
-    sources = "사람인 + 워크넷" if (use_worknet and has_worknet) else "사람인"
-    st.markdown(f"#### 실시간 검색 채용 리스트 · {total_shown}건 ({sources})")
+    st.markdown(f"#### 실시간 검색 채용 리스트 · {total_shown}건")
+
+    if source_stats:
+        parts = [f"{name} {count:,}건" for name, count, _ in source_stats]
+        line = " · ".join(parts) + f" → 중복 제거 후 {len(jobs):,}건"
+        if duplicates_removed:
+            line += f" (중복 {duplicates_removed:,}건 제외)"
+        st.caption(line)
+        empty = [name for name, count, warn in source_stats if count == 0 and not warn]
+        if empty:
+            st.caption(f"⚠️ 결과가 0건인 소스: {', '.join(empty)} — 검색어가 맞는지 확인하세요.")
 
     tabs = st.tabs(CATEGORIES)
     for category, tab in zip(CATEGORIES, tabs):

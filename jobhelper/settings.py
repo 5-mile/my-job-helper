@@ -92,6 +92,16 @@ def email_config() -> dict[str, str] | None:
     return None
 
 
+def saramin_api_key() -> str | None:
+    """사람인 공식 오픈API 인증키."""
+    return get("SARAMIN_API_KEY")
+
+
+def public_jobs_key() -> str | None:
+    """공공데이터포털 공공기관 채용정보 인증키."""
+    return get("PUBLIC_JOBS_KEY")
+
+
 def anthropic_api_key() -> str | None:
     """Claude API 키. 자소서·적합도 분석에만 쓰인다."""
     return get("ANTHROPIC_API_KEY")
@@ -111,6 +121,10 @@ def missing_keys() -> list[str]:
         missing.append("NPS_SERVICE_KEY (기업 규모·보수 정보)")
     if not worknet_auth_key():
         missing.append("WORKNET_AUTH_KEY (워크넷 공고)")
+    if not saramin_api_key():
+        missing.append("SARAMIN_API_KEY (사람인 공식 API)")
+    if not public_jobs_key():
+        missing.append("PUBLIC_JOBS_KEY (공공기관 채용정보)")
     if not anthropic_api_key():
         missing.append("ANTHROPIC_API_KEY (자소서 초안·적합도 분석)")
     if not telegram_config() and not email_config():
