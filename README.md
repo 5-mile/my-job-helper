@@ -146,7 +146,7 @@ Secrets 내용은 **화면에 출력하지 않고 파일로 저장합니다**
 
 ### 5. 자소서 초안 · 적합도 분석 — `ANTHROPIC_API_KEY`
 
-[Anthropic Console](https://console.anthropic.com)에서 API 키를 발급받아 넣으면
+[Claude Platform](https://platform.claude.com)에서 API 키를 발급받아 넣으면
 보관함의 각 공고에 **적합도 분석**과 **자소서** 탭이 활성화됩니다.
 
 **먼저 화면 아래 '내 프로필'을 채워야 합니다.** 경력, 자격증, 그리고 무엇보다

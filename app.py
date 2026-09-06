@@ -261,7 +261,7 @@ def _profile_gate() -> bool:
         st.info(
             "이 기능은 Claude API 키가 필요합니다. `.env`(또는 Streamlit Secrets)에 "
             "`ANTHROPIC_API_KEY`를 넣으면 켜집니다. "
-            "키는 https://console.anthropic.com 에서 발급합니다."
+            "키는 https://platform.claude.com 에서 발급합니다."
         )
         return False
     if not my_profile.is_usable():
