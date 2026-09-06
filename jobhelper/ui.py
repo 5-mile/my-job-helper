@@ -88,6 +88,76 @@ CSS = """
         font-size: 0.85rem;
         font-weight: 600;
     }
+
+    /* 카드 안 상세보기 링크 */
+    .card-link {
+        display: inline-block;
+        margin-top: 10px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #60A5FA;
+        text-decoration: none;
+    }
+    .card-link:hover { text-decoration: underline; }
+
+    /* 지원 현황 요약 스트립 (좁은 화면에서는 가로 스크롤) */
+    .status-strip {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 2px 0 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    .status-cell {
+        flex: 1 0 auto;
+        min-width: 78px;
+        text-align: center;
+        padding: 10px 8px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .status-cell.is-zero { opacity: 0.45; }
+    .status-num { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+    .status-label { font-size: 0.72rem; color: #94A3B8; margin-top: 2px; white-space: nowrap; }
+
+    /* ============ 모바일 ============ */
+    @media (max-width: 640px) {
+        /* 좌우 여백을 줄여 카드 폭을 최대한 확보 */
+        .block-container { padding-left: 0.7rem !important; padding-right: 0.7rem !important;
+                           padding-top: 2.5rem !important; }
+
+        .job-card-box { padding: 14px !important; border-radius: 10px !important; }
+        .company-title { font-size: 1.15rem !important; }
+        .job-title { font-size: 0.92rem !important; }
+        .platform-badge { font-size: 0.68rem !important; padding: 3px 6px !important;
+                          margin-right: 4px !important; margin-bottom: 6px !important; }
+        .job-meta { font-size: 0.72rem !important; }
+
+        .status-cell { min-width: 68px; padding: 8px 6px; }
+        .status-num { font-size: 1.25rem; }
+        .status-label { font-size: 0.67rem; }
+
+        /* 버튼은 손가락으로 누를 수 있게 키운다 */
+        div[data-testid="stHorizontalBlock"] button,
+        div[data-testid="stVerticalBlock"] button { min-height: 42px !important; }
+
+        /* 표·코드가 화면을 밀어내지 않게 */
+        div[data-testid="stTable"], .stDataFrame, pre { overflow-x: auto !important; }
+    }
+
+    /* 어떤 화면에서도 가로 스크롤이 생기지 않게 */
+    .job-card-box, .company-title, .job-title, .job-meta, .job-memo {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    @media (prefers-color-scheme: light) {
+        .card-link { color: #1D4ED8; }
+        .status-cell { background: #F8FAFC; border: 1px solid #E2E8F0; }
+        .status-label { color: #64748B; }
+    }
 </style>
 """
 
@@ -102,6 +172,24 @@ def status_pill(status: str) -> str:
         f'<span class="platform-badge" style="background:{color}22;color:{color};'
         f'border:1px solid {color}55;">{escape(status)}</span>'
     )
+
+
+def status_strip(counts: dict[str, int]) -> str:
+    """지원 현황 요약. st.metric 7개는 모바일에서 세로로 쌓여 화면을 다 먹는다.
+
+    가로 스크롤되는 한 줄로 만들어 어느 화면에서도 한눈에 보이게 한다.
+    """
+    cells = []
+    for status, count in counts.items():
+        color = STATUS_COLORS.get(status, "#94A3B8")
+        dim = "" if count else " is-zero"
+        cells.append(
+            f'<div class="status-cell{dim}">'
+            f'<div class="status-num" style="color:{color};">{count}</div>'
+            f'<div class="status-label">{escape(status)}</div>'
+            f"</div>"
+        )
+    return f'<div class="status-strip">{"".join(cells)}</div>'
 
 
 def company_badges(job: dict[str, Any]) -> list[str]:
@@ -171,13 +259,21 @@ def job_card(
     if job.get("sector"):
         meta = f'<div class="job-meta">{escape(job["sector"])}</div>'
 
+    # 상세보기는 링크면 충분하다. 카드 안에 넣으면 모바일에서 버튼 줄이 하나 준다.
+    link = ""
+    if job.get("link"):
+        link = (
+            f'<a class="card-link" href="{escape(job["link"])}" '
+            f'target="_blank" rel="noopener noreferrer">공고 상세보기 →</a>'
+        )
+
     joined = " ".join(classes)
     return (
         f'<div class="{joined}">'
         f'<div>{"".join(badges)}</div>'
         f'<div class="company-title">{escape(job.get("company", ""))}</div>'
         f'<div class="job-title">{escape(job.get("position", ""))}</div>'
-        f"{meta}</div>"
+        f"{meta}{link}</div>"
     )
 
 
@@ -193,12 +289,18 @@ def blog_card(item: dict[str, Any], *, is_new: bool = False, is_saved: bool = Fa
         badges.append(badge("보관함에 있음", "bg-blog"))
 
     css_class = "job-card-box is-saved" if is_saved else "job-card-box"
+    link = ""
+    if item.get("link"):
+        link = (
+            f'<a class="card-link" href="{escape(item["link"])}" '
+            f'target="_blank" rel="noopener noreferrer">원문 보기 →</a>'
+        )
     return (
         f'<div class="{css_class}">'
         f'<div>{"".join(badges)}</div>'
         f'<div class="company-title">{escape(item.get("company", ""))}</div>'
         f'<div class="job-title">{escape(item.get("position", ""))}</div>'
-        f"</div>"
+        f"{link}</div>"
     )
 
 

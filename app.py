@@ -30,6 +30,9 @@ st.set_page_config(
 )
 st.markdown(ui.CSS, unsafe_allow_html=True)
 
+# 한 번에 그리는 카드 수. 모바일에서 수백 장을 한꺼번에 그리면 눈에 띄게 느려진다.
+PAGE_SIZE = 20
+
 # 저장소 연결은 앱 시작에 꼭 필요하므로, 실패하면 원인을 화면에 설명하고 멈춘다.
 # (그냥 두면 psycopg 트레이스백만 나와서 무엇이 잘못됐는지 알기 어렵다.)
 _db_valid, _db_why = storage.validate_url() if storage.is_postgres() else (True, "")
@@ -202,9 +205,10 @@ st.markdown(
 st.caption("사람인·워크넷 검색과 전문 블로그 피드를 한 화면에서 보고, 스크랩한 공고의 지원 진행 상황까지 관리합니다.")
 
 counts = db.status_counts()
-summary_cols = st.columns(len(APPLICATION_STATUSES))
-for col, status in zip(summary_cols, APPLICATION_STATUSES):
-    col.metric(status, counts.get(status, 0))
+st.markdown(
+    ui.status_strip({s: counts.get(s, 0) for s in APPLICATION_STATUSES}),
+    unsafe_allow_html=True,
+)
 
 # 마감 임박 알림 배너
 today = date.today()
@@ -321,7 +325,12 @@ with col_left:
                 st.info("조건에 부합하는 채용 공고가 없습니다. 필터를 완화해 보세요.")
                 continue
 
-            for idx, job in enumerate(visible):
+            # 카드를 수백 장 한꺼번에 그리면 특히 모바일에서 느려진다.
+            shown_key = f"shown_{category}"
+            shown = st.session_state.get(shown_key, PAGE_SIZE)
+            page = visible[:shown]
+
+            for idx, job in enumerate(page):
                 job_saved = f"{job['company']}::{job['position']}" in saved
                 left = days_left(parse_deadline(job.get("deadline", "")), today)
                 st.markdown(
@@ -334,19 +343,28 @@ with col_left:
                     unsafe_allow_html=True,
                 )
 
-                btn_left, btn_right = st.columns(2)
-                with btn_left:
-                    if st.button(
-                        "✅ 보관됨" if job_saved else "⭐ 공고 스크랩",
-                        key=f"save_{category}_{idx}_{job['job_key']}",
-                        disabled=job_saved,
-                    ):
-                        db.save_job(job)
-                        st.toast(f"{job['company']} 공고를 보관함에 저장했습니다.")
-                        st.rerun()
-                with btn_right:
-                    st.link_button("🌐 공고 상세보기", url=job["link"])
+                if st.button(
+                    "✅ 보관됨" if job_saved else "⭐ 공고 스크랩",
+                    key=f"save_{category}_{idx}_{job['job_key']}",
+                    disabled=job_saved,
+                    use_container_width=True,
+                ):
+                    db.save_job(job)
+                    st.toast(f"{job['company']} 공고를 보관함에 저장했습니다.")
+                    st.rerun()
                 st.markdown('<div style="margin-bottom:14px;"></div>', unsafe_allow_html=True)
+
+            if len(visible) > shown:
+                remaining = len(visible) - shown
+                if st.button(
+                    f"⬇️ {min(PAGE_SIZE, remaining)}건 더 보기 (남은 {remaining:,}건)",
+                    key=f"more_{category}",
+                    use_container_width=True,
+                ):
+                    st.session_state[shown_key] = shown + PAGE_SIZE
+                    st.rerun()
+            elif len(visible) > PAGE_SIZE:
+                st.caption(f"{len(visible):,}건 전부 표시했습니다.")
 
 # ------------------------------------------
 # 우측 - 블로그 피드
@@ -363,18 +381,15 @@ with col_right:
             ui.blog_card(item, is_new=item["job_key"] in new_keys, is_saved=item_saved),
             unsafe_allow_html=True,
         )
-        b_left, b_right = st.columns(2)
-        with b_left:
-            if st.button(
-                "✅ 보관됨" if item_saved else "⭐ 스크랩",
-                key=f"save_blog_{idx}_{item['job_key']}",
-                disabled=item_saved,
-            ):
-                db.save_job(item)
-                st.toast(f"{item['company']} 공고를 보관함에 저장했습니다.")
-                st.rerun()
-        with b_right:
-            st.link_button("🌐 원문 보기", url=item["link"])
+        if st.button(
+            "✅ 보관됨" if item_saved else "⭐ 스크랩",
+            key=f"save_blog_{idx}_{item['job_key']}",
+            disabled=item_saved,
+            use_container_width=True,
+        ):
+            db.save_job(item)
+            st.toast(f"{item['company']} 공고를 보관함에 저장했습니다.")
+            st.rerun()
         st.markdown('<div style="margin-bottom:14px;"></div>', unsafe_allow_html=True)
 
 st.divider()

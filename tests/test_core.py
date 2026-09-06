@@ -185,3 +185,66 @@ def test_detect_tier_from_tag():
 
 def test_parse_deadline_korean_format():
     assert parse_deadline("[9월18일까지]", TODAY) == date(2026, 9, 18)
+
+
+# --- 모바일 최적화 ----------------------------------------------------------
+def test_status_strip_renders_all_statuses():
+    from jobhelper.ui import status_strip
+
+    html = status_strip({"관심": 3, "지원 완료": 0})
+    assert "관심" in html and "지원 완료" in html
+    assert ">3<" in html
+    assert "status-strip" in html
+
+
+def test_status_strip_dims_zero_counts():
+    """0건은 흐리게 표시해 눈에 걸리지 않게 한다."""
+    from jobhelper.ui import status_strip
+
+    html = status_strip({"관심": 0})
+    assert "is-zero" in html
+
+    assert "is-zero" not in status_strip({"관심": 1})
+
+
+def test_status_strip_escapes_labels():
+    from jobhelper.ui import status_strip
+
+    assert "<script>" not in status_strip({"<script>": 1})
+
+
+def test_job_card_embeds_detail_link():
+    """상세보기를 카드 안 링크로 넣어 모바일에서 버튼 줄을 줄인다."""
+    from jobhelper.ui import job_card
+
+    html = job_card({"company": "A", "position": "B", "date": "", "link": "https://example.com/1"})
+    assert 'href="https://example.com/1"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener noreferrer"' in html
+
+
+def test_job_card_without_link_has_no_anchor():
+    from jobhelper.ui import job_card
+
+    assert "card-link" not in job_card({"company": "A", "position": "B", "date": ""})
+
+
+def test_card_link_escapes_url():
+    from jobhelper.ui import job_card
+
+    html = job_card({"company": "A", "position": "B", "date": "", "link": 'x" onclick="evil()'})
+    assert 'onclick="evil()' not in html
+
+
+def test_blog_card_embeds_link():
+    from jobhelper.ui import blog_card
+
+    html = blog_card({"company": "A", "position": "B", "link": "https://blog.example/1"})
+    assert 'href="https://blog.example/1"' in html
+
+
+def test_css_has_mobile_breakpoint():
+    from jobhelper.ui import CSS
+
+    assert "@media (max-width: 640px)" in CSS
+    assert "overflow-wrap: anywhere" in CSS  # 긴 회사명이 화면을 밀어내지 않게
