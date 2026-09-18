@@ -217,10 +217,13 @@ def explain_connection_error(exc: Exception | str) -> str:
             "자동으로 일시 정지**되고 주소가 내려갑니다.\n\n"
             "supabase.com/dashboard 에서 프로젝트를 열어 **Restore/Resume** 를 누르면 "
             "데이터 그대로 다시 켜집니다.\n\n"
-            "이미 켜 두셨는데도 이 오류가 나온다면, Restore 후 **접속 주소가 바뀐** "
-            "경우입니다. Project Settings → Database → Connection string → "
-            "**Session pooler** 주소를 새로 복사해 `python setup_cloud.py` 로 다시 "
-            "넣어 주세요. 프로젝트를 지우셨다면 새로 만든 뒤 같은 방법으로 설정하면 됩니다."
+            "**방금 Restore 하셨다면 몇 분 기다렸다 새로고침**해 보세요. 프로젝트가 "
+            "켜진 뒤에도 pooler가 이를 알아차리는 데 시간이 걸려, 그동안은 같은 "
+            "오류가 나옵니다.\n\n"
+            "한참 지나도 그대로라면 접속 주소가 바뀐 경우입니다. Project Settings → "
+            "Database → Connection string → **Session pooler** 주소를 새로 복사해 "
+            "`python setup_cloud.py` 로 다시 넣어 주세요. 프로젝트를 지우셨다면 "
+            "새로 만든 뒤 같은 방법으로 설정하면 됩니다."
         )
     if "password authentication failed" in text:
         return (
@@ -437,3 +440,43 @@ def health_check() -> tuple[bool, str]:
         return True, f"{backend_name()} 연결 정상"
     except Exception as exc:
         return False, f"{backend_name()} 연결 실패: {exc}"
+
+
+def enable_rls_on_public_tables() -> list[str]:
+    """public 스키마 테이블에 Row Level Security를 켠다 (Postgres일 때만).
+
+    Supabase는 public 스키마를 REST API로 그대로 노출한다. RLS가 꺼져 있으면
+    프로젝트의 anon 키를 아는 사람이 보관함을 읽거나 지울 수 있다. 정책을 하나도
+    두지 않은 채 RLS만 켜면 REST 경로는 완전히 막힌다.
+
+    이 앱은 `postgres` 역할로 직접 붙고 그 역할은 BYPASSRLS라, 켜도 동작에는
+    영향이 없다. 테이블을 새로 만들어도 잊지 않도록 시작할 때마다 돌린다.
+
+    켠 테이블 이름을 돌려준다(이미 켜져 있던 것은 제외).
+    """
+    if not is_postgres():
+        return []
+
+    changed: list[str] = []
+    try:
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname = 'public' AND rowsecurity = false"
+            ).fetchall()
+            names = [r["tablename"] if isinstance(r, dict) else r[0] for r in rows]
+            for name in names:
+                # 테이블 이름은 우리가 만든 것뿐이지만, 식별자는 바인딩할 수 없으므로
+                # 모양을 한 번 확인하고 넘긴다.
+                if not re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+                    log.warning("예상 밖의 테이블 이름이라 건너뜁니다: %r", name)
+                    continue
+                conn.execute(f'ALTER TABLE public."{name}" ENABLE ROW LEVEL SECURITY')
+                changed.append(name)
+    except Exception as exc:  # pragma: no cover - 권한 없는 환경
+        # 보안 강화는 실패해도 앱을 멈출 이유가 없다. 로그만 남긴다.
+        log.warning("RLS를 켜지 못했습니다: %s", exc)
+        return []
+    if changed:
+        log.info("RLS를 켰습니다: %s", ", ".join(changed))
+    return changed

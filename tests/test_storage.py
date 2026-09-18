@@ -564,3 +564,23 @@ def test_direct_url_defaults_to_configured_url(monkeypatch):
 def test_direct_url_is_none_when_nothing_configured(monkeypatch):
     monkeypatch.setattr(storage, "database_url", lambda: None)
     assert storage.direct_url_from_pooler() is None
+
+
+# --- RLS 자동 설정 ------------------------------------------------------------
+# Supabase는 public 스키마를 REST API로 노출하므로, 정책 없이 RLS만 켜서 막는다.
+
+
+def test_enable_rls_is_noop_on_sqlite():
+    # SQLite에는 RLS가 없다. 조용히 아무것도 하지 않아야 한다.
+    assert storage.enable_rls_on_public_tables() == []
+
+
+def test_enable_rls_reports_failure_without_raising(monkeypatch):
+    # 권한이 없는 DB에서도 앱이 멈추면 안 된다.
+    monkeypatch.setattr(storage, "is_postgres", lambda: True)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("permission denied")
+
+    monkeypatch.setattr(storage, "connect", boom)
+    assert storage.enable_rls_on_public_tables() == []

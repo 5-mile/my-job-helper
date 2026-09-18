@@ -63,6 +63,8 @@ def _init_tables() -> None:
     notify.init_alert_log()
     profile_mod.init_profile_tables()
     insights.init_insight_tables()
+    # Supabase는 public 스키마를 REST API로 노출한다. 테이블을 만든 직후에 잠가 둔다.
+    storage.enable_rls_on_public_tables()
 
 
 _db_error = ""
