@@ -447,3 +447,63 @@ def test_validate_url_ignores_username_shape_for_direct_host():
         "postgresql://postgres:pw@db.mpbhyqmqbhcqyrzstsge.supabase.co:5432/postgres"
     )
     assert ok
+
+
+# ==========================================
+# 연결 실패 시 SQLite 폴백
+# ==========================================
+@pytest.fixture(autouse=True)
+def _reset_fallback():
+    storage.clear_fallback()
+    yield
+    storage.clear_fallback()
+
+
+@pytest.mark.parametrize("error,expect", [
+    ("FATAL:  (ENOTFOUND) tenant/user postgres.abc not found", "일시 정지"),
+    ("FATAL:  password authentication failed for user", "비밀번호"),
+    ("could not translate host name", "Session pooler"),
+    ("connection timeout expired", "시간"),
+])
+def test_explain_connection_error(error, expect):
+    assert expect in storage.explain_connection_error(error)
+
+
+def test_explain_unknown_error_has_generic_message():
+    assert storage.explain_connection_error("무언가 이상함")
+
+
+def test_tenant_not_found_points_to_resume():
+    """Supabase 무료 플랜은 7일 방치하면 멈춘다. 되살리는 법을 알려줘야 한다."""
+    message = storage.explain_connection_error("tenant/user postgres.x not found")
+    assert "Restore" in message or "Resume" in message
+    assert "supabase.com/dashboard" in message
+
+
+def test_fallback_switches_backend_to_sqlite(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: "postgresql://x/y")
+    assert storage.is_postgres() is True
+
+    storage.use_sqlite_fallback("프로젝트가 멈췄습니다")
+    assert storage.is_postgres() is False
+    assert storage.backend_name() == "SQLite"
+    assert "멈췄" in storage.fallback_reason()
+
+
+def test_clear_fallback_restores_postgres(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: "postgresql://x/y")
+    storage.use_sqlite_fallback("잠시 실패")
+    storage.clear_fallback()
+    assert storage.is_postgres() is True
+    assert storage.fallback_reason() == ""
+
+
+def test_fallback_actually_writes_to_sqlite(tmp_path, monkeypatch):
+    """폴백 상태에서도 보관함이 동작해야 한다 (임시로라도)."""
+    monkeypatch.setattr(storage, "database_url", lambda: "postgresql://x/y")
+    monkeypatch.setattr(storage, "SQLITE_PATH", str(tmp_path / "fallback.db"))
+    storage.use_sqlite_fallback("연결 실패")
+
+    db.init_db()
+    assert db.save_job({"company": "A", "position": "B"}) is True
+    assert len(db.load_jobs()) == 1

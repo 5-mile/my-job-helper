@@ -30,6 +30,10 @@ SQLITE_PATH = os.environ.get(
 _pg_lock = threading.Lock()
 _pg_conn: Any = None
 
+# Postgres에 못 붙었을 때 이 세션 동안 SQLite로 물러난 이유. 비어 있으면 정상.
+# (보관함은 못 쓰지만 공고 검색은 DB 없이도 되므로 앱 전체를 죽이지 않는다.)
+_fallback_reason: str = ""
+
 # 현재 열려 있는 연결의 방언. SQL 생성 함수는 전역 설정이 아니라 이 값을 따른다.
 # (DATABASE_URL이 있어도 db_path를 명시하면 SQLite로 붙으므로, 둘이 어긋나면 안 된다.)
 _active_dialect: ContextVar[str | None] = ContextVar("active_dialect", default=None)
@@ -158,7 +162,53 @@ def warn_direct_connection(url: str | None = None) -> str:
     return ""
 
 
+def fallback_reason() -> str:
+    """SQLite로 물러난 이유. 정상이면 빈 문자열."""
+    return _fallback_reason
+
+
+def use_sqlite_fallback(reason: str) -> None:
+    """이 세션 동안 SQLite를 쓰도록 전환한다."""
+    global _fallback_reason
+    _fallback_reason = reason
+    log.warning("Postgres 연결에 실패해 SQLite로 전환합니다: %s", reason)
+
+
+def clear_fallback() -> None:
+    global _fallback_reason
+    _fallback_reason = ""
+
+
+def explain_connection_error(exc: Exception | str) -> str:
+    """psycopg 오류를 사람이 읽고 조치할 수 있는 문구로 바꾼다."""
+    text = str(exc)
+
+    if "tenant" in text and "not found" in text:
+        return (
+            "Supabase 프로젝트를 찾을 수 없습니다. 무료 플랜은 **7일간 접속이 없으면 "
+            "자동으로 일시 정지**되고 주소가 내려갑니다.\n\n"
+            "supabase.com/dashboard 에서 프로젝트를 열어 **Restore/Resume** 를 누르면 "
+            "데이터 그대로 다시 켜집니다. 프로젝트를 지우셨다면 새로 만든 뒤 "
+            "`python setup_cloud.py` 로 다시 설정하세요."
+        )
+    if "password authentication failed" in text:
+        return (
+            "비밀번호가 맞지 않습니다. `[YOUR-PASSWORD]` 의 대괄호를 지웠는지, "
+            "특수문자(@ / %)를 인코딩했는지 확인하세요."
+        )
+    if "Name or service not known" in text or "could not translate host name" in text:
+        return (
+            "호스트 주소를 찾을 수 없습니다. `db.xxx.supabase.co`(IPv6 전용) 대신 "
+            "`aws-0-....pooler.supabase.com`(Session pooler) 주소를 쓰세요."
+        )
+    if "timeout" in text.lower():
+        return "연결이 시간 내에 되지 않았습니다. 네트워크나 방화벽을 확인하세요."
+    return "데이터베이스에 연결하지 못했습니다."
+
+
 def is_postgres() -> bool:
+    if _fallback_reason:
+        return False
     return bool(database_url())
 
 

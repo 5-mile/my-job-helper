@@ -57,26 +57,31 @@ if not _db_valid:
 
 _direct_warning = storage.warn_direct_connection() if storage.is_postgres() else ""
 
-try:
+def _init_tables() -> None:
     db.init_db()
     company_info.init_cache()
     notify.init_alert_log()
     profile_mod.init_profile_tables()
     insights.init_insight_tables()
+
+
+_db_error = ""
+try:
+    _init_tables()
 except Exception as exc:
-    st.error(f"❌ 데이터베이스에 연결하지 못했습니다 — {type(exc).__name__}")
+    # 공고 검색·트렌드는 외부 DB가 없어도 된다. DB가 죽었다고 앱 전체를 멈추지 말고
+    # SQLite로 물러나 계속 쓸 수 있게 한다 (보관함은 임시 저장이 된다).
+    _db_error = str(exc)
+    reason = storage.explain_connection_error(exc)
     if _direct_warning:
-        st.warning(f"⚠️ {_direct_warning}")
-    with st.expander("자세한 오류"):
-        st.code(str(exc))
-    st.info(
-        "확인할 것\n\n"
-        "- Secrets의 DATABASE_URL 호스트가 `...pooler.supabase.com` 인지 "
-        "(`db.xxx.supabase.co`는 IPv6 전용이라 여기서 연결되지 않습니다)\n"
-        "- 비밀번호에서 `[ ]` 대괄호를 지웠는지\n"
-        "- Supabase 프로젝트가 일시 정지 상태는 아닌지"
-    )
-    st.stop()
+        reason = f"{reason}\n\n{_direct_warning}"
+    storage.use_sqlite_fallback(reason)
+    try:
+        _init_tables()
+    except Exception as inner:
+        st.error("❌ 데이터베이스를 전혀 쓸 수 없습니다")
+        st.code(str(inner))
+        st.stop()
 
 
 # ==========================================
@@ -210,6 +215,18 @@ with st.sidebar.expander("📰 블로그 피드", expanded=False):
 if st.sidebar.button("🔄 캐시 비우고 새로 수집", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
+
+# 외부 DB에 못 붙어 SQLite로 물러난 경우, 화면 맨 위에서 알린다.
+if storage.fallback_reason():
+    st.error("⚠️ 외부 데이터베이스에 연결하지 못해 임시 저장소로 동작 중입니다")
+    st.warning(storage.fallback_reason())
+    st.caption(
+        "공고 검색·트렌드는 그대로 쓸 수 있습니다. 다만 지금 스크랩한 내용은 "
+        "앱이 재시작하면 사라집니다. 위 조치를 한 뒤 새로고침하세요."
+    )
+    if _db_error:
+        with st.expander("원본 오류"):
+            st.code(_db_error[:1500])
 
 missing = settings.missing_keys()
 _storage_ok = storage.is_postgres()
