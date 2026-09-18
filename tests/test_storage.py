@@ -584,3 +584,30 @@ def test_enable_rls_reports_failure_without_raising(monkeypatch):
 
     monkeypatch.setattr(storage, "connect", boom)
     assert storage.enable_rls_on_public_tables() == []
+
+
+# --- keepalive 스크립트 -------------------------------------------------------
+# Supabase 무료 플랜의 7일 자동 정지를 막는 유일한 장치라, 조용히 망가지면 안 된다.
+
+
+def test_keepalive_succeeds_without_database(monkeypatch):
+    import keepalive
+
+    monkeypatch.setattr(keepalive.storage, "is_postgres", lambda: False)
+    # DB를 안 쓰는 설정에서는 실패가 아니다.
+    assert keepalive.main() == 0
+
+
+def test_keepalive_fails_loudly_when_database_is_down(monkeypatch, capsys):
+    import keepalive
+
+    monkeypatch.setattr(keepalive.storage, "is_postgres", lambda: True)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("FATAL: (ENOTFOUND) tenant/user postgres.abc not found")
+
+    monkeypatch.setattr(keepalive.storage, "connect", boom)
+    # 0이 아니어야 Actions에 빨간 X가 남고 알림 메일이 온다.
+    assert keepalive.main() == 1
+    # 원인 안내도 같이 나와야 한다.
+    assert "Restore" in capsys.readouterr().out

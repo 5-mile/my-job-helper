@@ -1,7 +1,10 @@
-name: 마감 임박 알림
+name: 매일 점검 (DB 깨우기 · 마감 알림)
 
 # 앱은 Streamlit Cloud에 있고 거기엔 스케줄러가 없다. PC를 켜두지 않아도
 # 알림이 가도록 GitHub Actions에서 매일 돌린다.
+#
+# 겸해서 DB를 한 번 깨운다. Supabase 무료 플랜은 7일간 접속이 없으면
+# 프로젝트를 정지시키는데, 그러면 손으로 Restore 하기 전까지 보관함을 못 쓴다.
 on:
   schedule:
     # UTC 기준이라 00:00 UTC = 한국시간 오전 9시
@@ -44,16 +47,27 @@ jobs:
         run: |
           # 보관함이 외부 DB에 있어야 읽을 수 있다. SQLite는 이 러너에 없다.
           if [ -z "$DATABASE_URL" ]; then
+            echo "has_db=no" >> "$GITHUB_OUTPUT"
             echo "ready=no" >> "$GITHUB_OUTPUT"
-            echo "::notice::DATABASE_URL 시크릿이 없어 건너뜁니다. 저장소 Settings → Secrets and variables → Actions 에서 추가하세요."
+            echo "::warning::DATABASE_URL 시크릿이 없습니다. 알림도 못 보내고, Supabase 무료 플랜의 7일 자동 정지도 막지 못합니다. 저장소 Settings → Secrets and variables → Actions 에서 추가하세요."
             exit 0
           fi
+          echo "has_db=yes" >> "$GITHUB_OUTPUT"
           if [ -z "$TELEGRAM_BOT_TOKEN" ] && [ -z "$SMTP_USER" ]; then
             echo "ready=no" >> "$GITHUB_OUTPUT"
-            echo "::notice::발송 채널(TELEGRAM_BOT_TOKEN 또는 SMTP_USER)이 없어 건너뜁니다."
+            echo "::notice::발송 채널(TELEGRAM_BOT_TOKEN 또는 SMTP_USER)이 없어 알림은 건너뜁니다. DB 깨우기는 계속합니다."
             exit 0
           fi
           echo "ready=yes" >> "$GITHUB_OUTPUT"
+
+      # 알림 채널이 없어도 이건 돌아야 한다. Supabase 무료 플랜은 7일간 접속이
+      # 없으면 프로젝트를 정지시키고, 그러면 손으로 Restore 하기 전까지 보관함을
+      # 쓸 수 없다. 쿼리 한 번이면 그 시계가 초기화된다.
+      - name: DB 깨우기 (7일 자동 정지 방지)
+        if: steps.check.outputs.has_db == 'yes'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python keepalive.py
 
       - name: 마감 임박 공고 알림
         if: steps.check.outputs.ready == 'yes'

@@ -301,8 +301,25 @@ FATAL: (ENOTFOUND) tenant/user postgres.<프로젝트ID> not found
 **되살리는 법** — <https://supabase.com/dashboard> 에서 프로젝트를 열고
 **Restore / Resume** 를 누르면 데이터 그대로 다시 켜집니다.
 
-**멈추지 않게 하는 법** — 마감 알림 워크플로(`deadline-alert.yml`)를 설정해두면
-매일 DB에 접속하므로 자동으로 깨어 있습니다. 알림과 DB 유지가 한 번에 해결됩니다.
+**멈추지 않게 하는 법** — GitHub 저장소에 **`DATABASE_URL` 시크릿 하나만** 넣으면
+됩니다. 매일 아침 워크플로(`deadline-alert.yml`)가 `keepalive.py` 로 DB에 쿼리를
+한 번 날려 7일 시계를 초기화합니다.
+
+> 저장소 → **Settings → Secrets and variables → Actions → New repository secret**
+> → 이름 `DATABASE_URL`, 값은 `.streamlit/secrets.toml` 에 넣은 접속 문자열과 동일
+
+이 시크릿이 없으면 워크플로는 매일 돌기는 해도 **DB를 건드리지 않고 그냥
+넘어가므로, 7일 정지를 막지 못합니다.** (Actions 탭에 경고가 남습니다.)
+
+알림까지 받으려면 발송 채널(`TELEGRAM_BOT_TOKEN` 또는 `SMTP_USER` 등)을 추가로
+넣으면 됩니다. 채널이 없어도 DB 깨우기는 계속 돌아갑니다.
+
+DB가 죽으면 `keepalive.py` 가 실패하면서 Actions에 빨간 X를 남기고 GitHub이 메일을
+보내므로, 며칠 뒤에야 알아차리는 일이 없습니다.
+
+한 가지 더 — GitHub은 **저장소에 60일간 아무 활동이 없으면 예약 워크플로를
+자동으로 끕니다.** 두 달 넘게 손대지 않을 예정이라면 Actions 탭에서 한 번
+켜 주세요.
 
 **멈춰도 앱은 죽지 않습니다** — 외부 DB에 연결하지 못하면 임시 저장소(SQLite)로
 물러나 계속 동작합니다. 공고 검색·블로그 피드·트렌드는 그대로 쓸 수 있고, 화면
