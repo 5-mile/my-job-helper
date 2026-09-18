@@ -14,7 +14,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from jobhelper import db, storage
+from jobhelper import console, db, storage
+
+console.setup()
 
 PROBE_COMPANY = "__연결점검용__"
 PROBE_POSITION = "__삭제해도_됨__"

@@ -13,7 +13,10 @@ import argparse
 import logging
 import sys
 
+from jobhelper import console
 from jobhelper.notify import run
+
+console.setup()
 
 
 def main() -> int:

@@ -507,3 +507,60 @@ def test_fallback_actually_writes_to_sqlite(tmp_path, monkeypatch):
     db.init_db()
     assert db.save_job({"company": "A", "position": "B"}) is True
     assert len(db.load_jobs()) == 1
+
+
+# --- pooler → 직접 연결 주소 변환 -------------------------------------------
+# Supabase 프로젝트를 Restore 한 직후에는 pooler가 프로젝트를 아직 모를 수 있다.
+# 그때 같은 자격 증명으로 직접 연결을 시도하면 데이터를 그대로 쓸 수 있다.
+
+POOLER_URL = (
+    "postgresql://postgres.abcdefghijklmnop:s3cret@"
+    "aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+)
+
+
+def test_direct_url_keeps_project_and_password():
+    direct = storage.direct_url_from_pooler(POOLER_URL)
+    assert direct == (
+        "postgresql://postgres:s3cret@db.abcdefghijklmnop.supabase.co:5432/postgres"
+    )
+
+
+def test_direct_url_handles_transaction_pooler_port():
+    url = POOLER_URL.replace(":5432/", ":6543/")
+    direct = storage.direct_url_from_pooler(url)
+    # 직접 연결은 포트가 항상 5432다.
+    assert direct.endswith("db.abcdefghijklmnop.supabase.co:5432/postgres")
+
+
+def test_direct_url_survives_special_characters_in_password():
+    url = POOLER_URL.replace("s3cret", "p!a$s%wd")
+    assert "p!a$s%wd" in storage.direct_url_from_pooler(url)
+
+
+def test_direct_url_accepts_postgres_scheme():
+    url = POOLER_URL.replace("postgresql://", "postgres://")
+    assert storage.direct_url_from_pooler(url).startswith("postgres://")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "postgresql://postgres:pw@db.abcdefghijklmnop.supabase.co:5432/postgres",
+        "postgresql://user:pw@localhost:5432/postgres",
+        "sqlite:///jobs.db",
+    ],
+)
+def test_direct_url_returns_none_for_non_pooler(url):
+    assert storage.direct_url_from_pooler(url) is None
+
+
+def test_direct_url_defaults_to_configured_url(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: POOLER_URL)
+    assert storage.direct_url_from_pooler() == storage.direct_url_from_pooler(POOLER_URL)
+
+
+def test_direct_url_is_none_when_nothing_configured(monkeypatch):
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    assert storage.direct_url_from_pooler() is None

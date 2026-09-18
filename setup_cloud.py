@@ -17,7 +17,9 @@ import logging
 import os
 import sys
 
-from jobhelper import settings, storage
+from jobhelper import console, settings, storage
+
+console.setup()
 from jobhelper.migrate import migrate
 
 ENV_TEMPLATE = 'DATABASE_URL=postgresql://postgres:비밀번호@db.xxxxx.supabase.co:5432/postgres'

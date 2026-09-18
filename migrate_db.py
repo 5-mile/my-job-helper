@@ -16,7 +16,9 @@ import argparse
 import logging
 import sys
 
-from jobhelper import storage
+from jobhelper import console, storage
+
+console.setup()
 from jobhelper.migrate import migrate
 
 

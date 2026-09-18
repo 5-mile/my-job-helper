@@ -47,6 +47,34 @@ def database_url() -> str | None:
     return settings.get("DATABASE_URL")
 
 
+# Session pooler 주소: postgresql://postgres.<프로젝트ref>:<비번>@aws-N-<리전>.pooler.supabase.com:<포트>/postgres
+_POOLER_RE = re.compile(
+    r"^(?P<scheme>postgres(?:ql)?://)postgres\.(?P<ref>[a-z0-9]+):(?P<pw>[^@]+)@"
+    r"[^/]*pooler\.supabase\.com:\d+(?P<tail>/.*)?$"
+)
+
+
+def direct_url_from_pooler(url: str | None = None) -> str | None:
+    """pooler 주소에서 같은 프로젝트의 직접 연결 주소를 만들어 준다.
+
+    프로젝트를 Restore 한 직후에는 pooler 쪽 테넌트 등록이 늦어 `tenant not found`
+    가 나는 일이 있다. 그럴 때 직접 연결로 우회하면 데이터는 그대로 쓸 수 있다.
+    다만 직접 연결은 IPv6 전용이라 Streamlit Cloud에서는 통하지 않는다.
+    """
+    url = url if url is not None else database_url()
+    if not url:
+        return None
+    m = _POOLER_RE.match(url.strip())
+    if not m:
+        return None
+    return "{scheme}postgres:{pw}@db.{ref}.supabase.co:5432{tail}".format(
+        scheme=m.group("scheme"),
+        pw=m.group("pw"),
+        ref=m.group("ref"),
+        tail=m.group("tail") or "/postgres",
+    )
+
+
 PASSWORD_PLACEHOLDERS = ("[YOUR-PASSWORD]", "[your-password]", "비밀번호")
 
 
@@ -188,8 +216,11 @@ def explain_connection_error(exc: Exception | str) -> str:
             "Supabase 프로젝트를 찾을 수 없습니다. 무료 플랜은 **7일간 접속이 없으면 "
             "자동으로 일시 정지**되고 주소가 내려갑니다.\n\n"
             "supabase.com/dashboard 에서 프로젝트를 열어 **Restore/Resume** 를 누르면 "
-            "데이터 그대로 다시 켜집니다. 프로젝트를 지우셨다면 새로 만든 뒤 "
-            "`python setup_cloud.py` 로 다시 설정하세요."
+            "데이터 그대로 다시 켜집니다.\n\n"
+            "이미 켜 두셨는데도 이 오류가 나온다면, Restore 후 **접속 주소가 바뀐** "
+            "경우입니다. Project Settings → Database → Connection string → "
+            "**Session pooler** 주소를 새로 복사해 `python setup_cloud.py` 로 다시 "
+            "넣어 주세요. 프로젝트를 지우셨다면 새로 만든 뒤 같은 방법으로 설정하면 됩니다."
         )
     if "password authentication failed" in text:
         return (
@@ -299,13 +330,29 @@ def _connect_postgres():
     # prepare_threshold=None: Supabase transaction pooler(6543)는 prepared
     # statement를 지원하지 않는다. session pooler/직접 연결에서는 영향이 없으므로
     # 어느 쪽을 쓰든 동작하도록 꺼 둔다.
-    _pg_conn = psycopg.connect(
-        url,
-        row_factory=dict_row,
-        autocommit=False,
-        connect_timeout=10,
-        prepare_threshold=None,
-    )
+    def _open(target: str):
+        return psycopg.connect(
+            target,
+            row_factory=dict_row,
+            autocommit=False,
+            connect_timeout=10,
+            prepare_threshold=None,
+        )
+
+    try:
+        _pg_conn = _open(url)
+    except Exception as exc:
+        # Restore 직후에는 pooler가 프로젝트를 아직 모를 수 있다(tenant not found).
+        # 같은 자격 증명으로 직접 연결이 되면 데이터를 그대로 쓸 수 있으므로 한 번 더 시도한다.
+        fallback = direct_url_from_pooler(url)
+        if not fallback:
+            raise
+        log.warning("pooler 연결 실패, 직접 연결로 재시도합니다: %s", exc)
+        try:
+            _pg_conn = _open(fallback)
+        except Exception:
+            raise exc from None
+        log.info("직접 연결로 접속했습니다 (IPv6 전용이라 Streamlit Cloud에서는 통하지 않습니다).")
     return _pg_conn
 
 
