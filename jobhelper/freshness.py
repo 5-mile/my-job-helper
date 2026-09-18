@@ -12,8 +12,10 @@ Manage app -> Reboot 을 눌러야만 풀린다.
 
 from __future__ import annotations
 
+import ast
 import importlib
 import logging
+import os
 import sys
 
 log = logging.getLogger(__name__)
@@ -31,6 +33,70 @@ REQUIRED_ATTRS: dict[str, tuple[str, ...]] = {
     "jobhelper.scrapers.publicjobs": ("fetch_public_jobs",),
 }
 
+APP_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py"
+)
+
+
+def _derive_required(app_path: str = APP_PATH) -> dict[str, set[str]]:
+    """app.py 를 읽어 `모듈.이름` 형태로 쓰이는 이름을 전부 뽑아낸다.
+
+    위의 REQUIRED_ATTRS 를 손으로 관리하다 보면, 함수를 새로 추가할 때마다
+    목록에 넣는 걸 잊어서 배포 후에야 AttributeError 로 드러난다. 실제로
+    그 일이 반복돼서, 목록을 코드에서 직접 뽑도록 했다.
+
+    `from jobhelper.config import CATEGORIES` 처럼 이름만 가져오는 경우는
+    여기서 잡히지 않으므로(그건 import 시점에 바로 터진다) REQUIRED_ATTRS 가
+    여전히 보완 역할을 한다.
+    """
+    try:
+        with open(app_path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), filename=app_path)
+    except (OSError, SyntaxError) as exc:
+        log.warning("app.py 를 읽지 못해 정적 목록만 씁니다: %s", exc)
+        return {}
+
+    # 지역 이름 -> jobhelper 하위 모듈 이름
+    aliases: dict[str, str] = {}
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _is_module(dotted: str) -> bool:
+        rel = dotted.split(".", 1)[1].replace(".", os.sep)
+        base = os.path.join(package_dir, rel)
+        return os.path.isfile(base + ".py") or os.path.isdir(base)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if not node.module or not node.module.startswith("jobhelper"):
+                continue
+            for alias in node.names:
+                dotted = f"{node.module}.{alias.name}"
+                if _is_module(dotted):
+                    aliases[alias.asname or alias.name] = dotted
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("jobhelper") and alias.asname:
+                    aliases[alias.asname] = alias.name
+
+    found: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in aliases
+        ):
+            found.setdefault(aliases[node.value.id], set()).add(node.attr)
+    return found
+
+
+def _required() -> dict[str, set[str]]:
+    """정적 목록과 app.py 에서 뽑은 목록을 합친다."""
+    merged: dict[str, set[str]] = {k: set(v) for k, v in REQUIRED_ATTRS.items()}
+    for module_name, attrs in _derive_required().items():
+        merged.setdefault(module_name, set()).update(attrs)
+    return merged
+
+
 REBOOT_HELP = (
     "코드는 새로 배포됐지만 서버가 옛 모듈을 그대로 쓰고 있습니다.\n\n"
     "**Manage app → 우측 위 ⋮ → Reboot app** 을 누르면 해결됩니다."
@@ -40,7 +106,7 @@ REBOOT_HELP = (
 def _missing() -> list[str]:
     """로드된 모듈 중 필요한 이름이 빠진 것들."""
     stale = []
-    for module_name, attrs in REQUIRED_ATTRS.items():
+    for module_name, attrs in _required().items():
         module = sys.modules.get(module_name)
         if module is None:
             continue  # 아직 import 전이면 정상적으로 새로 읽힌다

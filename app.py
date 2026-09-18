@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import date
 
 import streamlit as st
@@ -25,6 +26,8 @@ from jobhelper.scrapers.saramin import fetch_saramin_jobs_detailed, group_by_cat
 from jobhelper.scrapers.worknet import fetch_worknet_jobs
 from jobhelper.scrapers.saramin_api import fetch_saramin_api_jobs
 from jobhelper.scrapers.publicjobs import fetch_public_jobs
+
+log = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="통합 채용 정보 및 지원 현황 관리",
@@ -64,7 +67,11 @@ def _init_tables() -> None:
     profile_mod.init_profile_tables()
     insights.init_insight_tables()
     # Supabase는 public 스키마를 REST API로 노출한다. 테이블을 만든 직후에 잠가 둔다.
-    storage.enable_rls_on_public_tables()
+    # 보안 강화는 있으면 좋은 것이지 앱이 뜨는 조건은 아니므로, 실패해도 넘어간다.
+    try:
+        storage.enable_rls_on_public_tables()
+    except Exception as exc:
+        log.warning("RLS 설정을 건너뜁니다: %s", exc)
 
 
 _db_error = ""

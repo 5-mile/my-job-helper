@@ -368,3 +368,46 @@ def test_deadline_alert_skips_without_secrets():
     steps = data["jobs"]["notify"]["steps"]
     run_step = [s for s in steps if "notify.py" in str(s.get("run", ""))][0]
     assert "ready == 'yes'" in run_step.get("if", "")
+
+
+# --- freshness 목록 자동 추출 -------------------------------------------------
+# 목록을 손으로 관리하다 새 함수를 빠뜨려 배포 후 AttributeError 가 난 적이
+# 여러 번 있다. 이제 app.py 에서 직접 뽑아내므로, 그 추출이 도는지 확인한다.
+
+
+def test_derived_list_covers_every_module_attribute_app_uses():
+    """app.py 가 `모듈.이름` 으로 쓰는 이름은 실제로 그 모듈에 있어야 한다."""
+    import importlib
+
+    from jobhelper import freshness
+
+    missing = []
+    for module_name, attrs in freshness._derive_required().items():
+        module = importlib.import_module(module_name)
+        missing += [
+            f"{module_name}.{a}" for a in sorted(attrs) if not hasattr(module, a)
+        ]
+    assert not missing, "app.py 가 없는 이름을 부릅니다: " + ", ".join(missing)
+
+
+def test_derived_list_picks_up_storage_helpers():
+    from jobhelper import freshness
+
+    derived = freshness._derive_required()
+    assert "enable_rls_on_public_tables" in derived["jobhelper.storage"]
+
+
+def test_derived_list_merges_into_required():
+    from jobhelper import freshness
+
+    merged = freshness._required()
+    # 정적 목록에만 있는 것과 추출된 것이 모두 들어있어야 한다.
+    assert "warn_direct_connection" in merged["jobhelper.storage"]
+    assert "enable_rls_on_public_tables" in merged["jobhelper.storage"]
+
+
+def test_derived_list_survives_unreadable_app(tmp_path):
+    from jobhelper import freshness
+
+    # app.py 를 읽지 못해도 정적 목록으로 계속 동작해야 한다.
+    assert freshness._derive_required(str(tmp_path / "없는파일.py")) == {}
