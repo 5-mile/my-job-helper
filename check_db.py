@@ -91,8 +91,12 @@ def main() -> int:
                 gone = not any(j["id"] == job_id for j in db.load_jobs())
                 steps.append(("삭제", gone))
 
+        # 두 번째 기록에서는 '새 공고'로 잡히지 않아야 NEW 뱃지가 제대로 동작한다.
         db.mark_seen(["__probe__"])
-        steps.append(("NEW 뱃지 기록", True))
+        steps.append(("NEW 뱃지 기록", "__probe__" not in db.mark_seen(["__probe__"])))
+        if not args.keep:
+            with storage.connect() as conn:
+                conn.execute("DELETE FROM seen_jobs WHERE job_key = ?", ("__probe__",))
 
     except Exception as exc:
         print(f"\n❌ 점검 중 오류: {type(exc).__name__}: {exc}", file=sys.stderr)

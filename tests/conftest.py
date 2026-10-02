@@ -28,3 +28,8 @@ def isolate_project_files(tmp_path, monkeypatch):
     monkeypatch.setattr(
         storage, "SQLITE_PATH", str(tmp_path / "jobs.db"), raising=False
     )
+    # 로컬 .env 의 실제 DATABASE_URL 이 새어 들어오면 테스트가 진짜 보관함에
+    # 쓰고 지운다. Postgres 동작을 보는 테스트는 각자 다시 monkeypatch 한다.
+    monkeypatch.setattr(storage, "database_url", lambda: None)
+    monkeypatch.setattr(storage, "_pg_conn", None)
+    monkeypatch.setattr(storage, "_fallback_reason", "")

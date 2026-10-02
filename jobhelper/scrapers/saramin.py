@@ -124,7 +124,10 @@ def _parse_item(item) -> dict[str, Any] | None:
 
     raw_date = _text(_select_first(item, DATE_SELECTORS), "상세 확인")
     deadline = parse_deadline(raw_date)
-    sector = _text(item.select_one(".job_sector"))
+    # .job_sector 안에 '수정일 26/10/01' span이 같이 들어 있어 통째로 읽으면 붙는다.
+    sector_tag = item.select_one(".job_sector")
+    sector = ", ".join(a.get_text(strip=True) for a in sector_tag.select("a")) if sector_tag else ""
+    sector = sector or _text(sector_tag)
 
     welfares = analyze(company, f"{position} {sector} {employment}")
     rec_idx = _REC_IDX.search(href)

@@ -270,3 +270,23 @@ def test_public_category_is_in_config():
     from jobhelper.config import CATEGORIES
 
     assert publicjobs.CATEGORY in CATEGORIES
+
+
+def test_saramin_sector_drops_modified_date():
+    """'.job_sector' 안의 수정일 span이 직무 분야에 붙으면 안 된다."""
+    from bs4 import BeautifulSoup
+
+    from jobhelper.scrapers import saramin
+
+    html = """
+    <div class="item_recruit">
+      <div class="area_corp"><strong class="corp_name"><a>동서식품(주)</a></strong></div>
+      <h2 class="job_tit"><a href="/zf_user/jobs/relay/view?rec_idx=1" title="생산직 OP">생산직 OP</a></h2>
+      <div class="job_sector">
+        <b><a>생산</a></b>, <a>설비OP</a>, <a>식품가공</a>
+        <span class="job_day">수정일 26/10/01</span>
+      </div>
+    </div>"""
+    item = BeautifulSoup(html, "lxml").select_one(".item_recruit")
+    job = saramin._parse_item(item)
+    assert job["sector"] == "생산, 설비OP, 식품가공"
