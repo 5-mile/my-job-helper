@@ -10,6 +10,7 @@
     python jobctl.py detail <공고주소>             # 공고 본문
     python jobctl.py saved                         # 보관함
     python jobctl.py save --file job.json          # 보관함에 추가
+    python jobctl.py letters --company 기본          # 저장된 자소서 (기본 자소서 등)
     python jobctl.py save-letter --company 포스코 --question "지원 동기" --file a.txt
 """
 
@@ -118,6 +119,13 @@ def cmd_save(_args) -> int:
     return 0
 
 
+def cmd_letters(args) -> int:
+    # 문항 제목이 "1. ...", "2. ..." 로 시작하므로 제목순이 곧 글의 순서다.
+    letters = sorted(profile_mod.load_cover_letters(args.company), key=lambda l: l["question"])
+    _out([{"company": l["company"], "question": l["question"], "answer": l["answer"]} for l in letters])
+    return 0
+
+
 def cmd_save_letter(args) -> int:
     with open(args.file, encoding="utf-8") as fh:
         answer = fh.read().strip()
@@ -157,6 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("save")
     s.add_argument("--file", help="UTF-8 JSON 파일 (없으면 표준입력)")
     s.set_defaults(fn=cmd_save)
+
+    s = sub.add_parser("letters")
+    s.add_argument("--company", help="예: 기본 (없으면 전부)")
+    s.set_defaults(fn=cmd_letters)
 
     s = sub.add_parser("save-letter")
     s.add_argument("--company", required=True)

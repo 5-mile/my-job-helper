@@ -59,6 +59,13 @@ def test_save_letter_round_trip(monkeypatch, capsys, tmp_path):
     letters = profile_mod.load_cover_letters("포스코")
     assert letters[0]["answer"] == "설비 보전 경험을 살려..."
 
+    # 기본 자소서는 문항 번호 순서대로 나와야 /apply 가 글 순서를 지킨다.
+    for q in ("2. 직무 역량", "1. 지원동기"):
+        f.write_text(q + " 본문", encoding="utf-8")
+        _run(monkeypatch, capsys, ["save-letter", "--company", "기본", "--question", q, "--file", str(f)])
+    _, out = _run(monkeypatch, capsys, ["letters", "--company", "기본"])
+    assert [l["question"] for l in json.loads(out)] == ["1. 지원동기", "2. 직무 역량"]
+
     f.write_text("   ", encoding="utf-8")
     code, _ = _run(monkeypatch, capsys,
                    ["save-letter", "--company", "포스코", "--question", "지원 동기", "--file", str(f)])
