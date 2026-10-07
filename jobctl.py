@@ -119,6 +119,19 @@ def cmd_save(_args) -> int:
     return 0
 
 
+REQUEST_TAG = "[자소서 요청]"  # 텔레그램 봇의 '✍️ 자소서 부탁' 이 메모에 붙이는 표시
+
+
+def cmd_done_request(args) -> int:
+    job = next((j for j in db.load_jobs() if j["id"] == args.job_id), None)
+    if job is None:
+        print(f"보관함에 id {args.job_id} 공고가 없습니다.", file=sys.stderr)
+        return 1
+    db.update_job(args.job_id, memo=(job.get("memo") or "").replace(REQUEST_TAG, "").strip())
+    print(f"자소서 요청 표시를 지웠습니다: {job['company']}")
+    return 0
+
+
 def cmd_letters(args) -> int:
     # 문항 제목이 "1. ...", "2. ..." 로 시작하므로 제목순이 곧 글의 순서다.
     letters = sorted(profile_mod.load_cover_letters(args.company), key=lambda l: l["question"])
@@ -165,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("save")
     s.add_argument("--file", help="UTF-8 JSON 파일 (없으면 표준입력)")
     s.set_defaults(fn=cmd_save)
+
+    s = sub.add_parser("done-request", help="자소서 요청 표시 지우기")
+    s.add_argument("--job-id", type=int, required=True)
+    s.set_defaults(fn=cmd_done_request)
 
     s = sub.add_parser("letters")
     s.add_argument("--company", help="예: 기본 (없으면 전부)")

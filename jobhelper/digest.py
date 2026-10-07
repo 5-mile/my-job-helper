@@ -22,7 +22,11 @@ from .storage import connect, insert_or_ignore
 
 log = logging.getLogger(__name__)
 
-DEFAULT_REGIONS = "음성,진천,충주,증평,괴산,청주,이천,안성"
+# 갈 수 있는 범위: 경기·충청·경북 (그 안의 대전·세종·대구 포함). 근무지 표기에 이 글자가 있어야 한다.
+DEFAULT_REGIONS = "경기,충북,충남,대전,세종,경북,대구"
+# 범위 안에서도 먼저 보고 싶은 곳. 점수를 올려 위로 보낸다.
+DEFAULT_PREFERRED = "음성,진천,충주,증평,괴산,청주,이천,안성"
+PREFERRED_BONUS = 2
 DEFAULT_KEYWORDS = "음성 생산,진천 생산,충주 생산,이차전지,화학 생산,설비OP,생산직"
 DEFAULT_LIMIT = 5
 
@@ -30,7 +34,9 @@ DEFAULT_LIMIT = 5
 _EDU_BLOCK = re.compile(r"^대졸|석사|박사")
 _OFF = re.compile(
     r"연구|R&D|임원|영업|마케팅|사무|회계|인사|총무|MES|소프트웨어|디자인|설계|"
-    r"운전기사|배송|택배|요양|간호|조리|영양|미화|경비|상담"
+    r"운전기사|배송|택배|요양|간호|조리|영양|미화|경비|상담|"
+    # 공무(설비보전·정비)는 지원하지 않기로 했다. 설비'OP'(운전)는 생산이라 남긴다.
+    r"공무|보전|정비|유지보수"
 )
 _ON = re.compile(r"생산|OP|오퍼레이터|Operator|운전원|설비|공정|제조|화학|이차전지|배터리|보전|정비|유틸|품질|지게차|자재")
 _TEMP = re.compile(r"아르바이트|단기")
@@ -38,7 +44,7 @@ _TEMP = re.compile(r"아르바이트|단기")
 _WEIGHTS = [
     (re.compile(r"이차전지|2차전지|배터리|양극|음극|전해|리튬"), 5),
     (re.compile(r"화학|케미|켐|정밀화학|합성|소재|정제"), 4),
-    (re.compile(r"설비|보전|정비|유지보수|유틸"), 3),
+    (re.compile(r"설비|유틸"), 3),
     (re.compile(r"OP|오퍼레이터|Operator|운전원|조작원"), 2),
     (re.compile(r"정규직"), 1),
     (re.compile(r"지게차|자재"), 1),
@@ -66,7 +72,9 @@ def score(job: dict[str, Any]) -> int:
     return s - 2 if "파견" in (job.get("employment") or "") else s
 
 
-def select(jobs: list[dict[str, Any]], regions: list[str], today: date) -> list[dict[str, Any]]:
+def select(
+    jobs: list[dict[str, Any]], regions: list[str], today: date, preferred: list[str] = ()
+) -> list[dict[str, Any]]:
     """지역·학력·직무·마감으로 거르고 점수순으로 정렬한다 (중복 제거 포함)."""
     picked, seen = [], set()
     for job in jobs:
@@ -91,7 +99,8 @@ def select(jobs: list[dict[str, Any]], regions: list[str], today: date) -> list[
         deadline = job.get("deadline") or ""
         if deadline and deadline < today.isoformat():
             continue
-        picked.append({**job, "score": score(job), "key": key})
+        bonus = PREFERRED_BONUS if any(p in location for p in preferred) else 0
+        picked.append({**job, "score": score(job) + bonus, "key": key})
     picked.sort(key=lambda j: -j["score"])
     return picked
 
@@ -200,7 +209,7 @@ def run(
         log.warning(diagnostics.warning)
 
     # ponytail: 풀은 지우지 않고 쌓인다 (하루 수십 건, 행당 수백 바이트). 커지면 오래된 sent 행 정리.
-    _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today), db_path)
+    _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED)), db_path)
     fresh = next_batch(limit, today, db_path)
     result: dict[str, Any] = {"collected": len(jobs), "new": len(fresh), "sent": False}
     if not fresh:

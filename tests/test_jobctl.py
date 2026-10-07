@@ -70,3 +70,12 @@ def test_save_letter_round_trip(monkeypatch, capsys, tmp_path):
     code, _ = _run(monkeypatch, capsys,
                    ["save-letter", "--company", "포스코", "--question", "지원 동기", "--file", str(f)])
     assert code == 1  # 빈 답변이 기존 답변을 덮어쓰면 안 된다
+
+
+def test_done_request_strips_only_the_tag(monkeypatch, capsys):
+    _init()
+    _run(monkeypatch, capsys, ["save"], {"company": "머크", "position": "생산 OP", "memo": "[자소서 요청] 10/18 마감"})
+    job_id = db.load_jobs()[0]["id"]
+    code, _ = _run(monkeypatch, capsys, ["done-request", "--job-id", str(job_id)])
+    assert code == 0
+    assert db.load_jobs()[0]["memo"] == "10/18 마감"

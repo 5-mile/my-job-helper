@@ -209,6 +209,19 @@ GitHub 저장소 Secrets에 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` 가 있으�
 지역·검색어·건수는 `.env` 또는 저장소 **Variables** 의 `DIGEST_REGIONS`, `DIGEST_KEYWORDS`, `DIGEST_LIMIT` 로 바꿉니다.
 키워드로 거르는 1차 선별이라, 깊은 채점은 Claude Code의 `/rank` 로 하세요.
 
+## 텔레그램 버튼 봇
+
+| 버튼 | 하는 일 |
+| --- | --- |
+| 공고 아래 ⭐1~⭐5 | 그 공고를 보관함에 저장 |
+| 다음 5건 ▶ / 📋 공고 더 보기 | 매일 모아 둔 후보 중 아직 안 본 공고 |
+| ⏰ 마감 임박 | 보관함에서 7일 안에 마감 |
+| 📁 보관함 | 지원 현황 요약 + 번호를 눌러 **상태 변경 · ✍️ 자소서 부탁 · 🗑 삭제** |
+
+"✍️ 자소서 부탁" 을 누르면 Claude Code에서 `/apply` 만 쳐도 그 공고부터 씁니다.
+봇은 Supabase Edge Function(`supabase/functions/telegram-bot`)으로 돌고, 앱과 같은 DB를 씁니다.
+설정: `.env` 에 `SUPABASE_ACCESS_TOKEN` 을 넣고 `python telegram_bot.py setup` (상태 확인은 `status`).
+
 ## 알림 자동 실행
 
 앱을 열지 않아도 매일 알림을 받으려면 `notify.py`를 스케줄러에 등록합니다.

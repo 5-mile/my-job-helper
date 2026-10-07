@@ -105,29 +105,144 @@ async function save(callbackId: string, key: string) {
   };
 }
 
-// ⏰ 마감 임박 — 보관함에서 7일 안에 마감
-async function urgent(chatId: number) {
-  const t = today();
-  const rows = await sql`
-    select company, position, deadline, status from scrapped_jobs
-    where deadline between ${t} and ${plusDays(t, 7)} and status not in ${sql(SKIP_STATUSES)}
-    order by deadline`;
-  const text = rows.length
-    ? ["⏰ 7일 안에 마감되는 보관 공고", "", ...rows.map((r) =>
-        `• ${r.deadline} · ${r.company} · ${r.position} (${r.status})`)].join("\n")
-    : "7일 안에 마감되는 보관 공고가 없습니다.";
-  return { method: "sendMessage", chat_id: chatId, text, reply_markup: MENU };
+// ---------------------------------------------------------------------------
+// 보관함 관리: 목록 → 번호 누르면 그 공고 → 상태 변경·자소서 부탁·삭제
+// 버튼으로 누른 건 같은 메시지를 고쳐서(editMessageText) 화면이 쌓이지 않게 한다.
+// ---------------------------------------------------------------------------
+
+// config.APPLICATION_STATUSES 와 같은 순서 (callback 에는 번호만 싣는다)
+const STATUSES = ["관심", "지원 예정", "지원 완료", "서류 합격", "면접 진행", "최종 합격", "불합격"];
+const REQUEST_TAG = "[자소서 요청]";
+const LIST_SIZE = 10;
+
+type View = { text: string; reply_markup?: unknown };
+type Where = { chatId: number; messageId?: number }; // messageId 가 있으면 그 메시지를 고친다
+
+function show(where: Where, view: View) {
+  const base = { chat_id: where.chatId, disable_web_page_preview: true, ...view };
+  return where.messageId
+    ? { method: "editMessageText", message_id: where.messageId, ...base }
+    : { method: "sendMessage", ...base };
 }
 
-// 📁 보관함 — 최근 15건
-async function saved(chatId: number) {
-  const rows = await sql`
-    select company, position, deadline, status from scrapped_jobs order by id desc limit 15`;
-  const text = rows.length
-    ? [`📁 보관함 (최근 ${rows.length}건)`, "", ...rows.map((r) =>
-        `• [${r.status}] ${r.company} · ${r.position}${r.deadline ? ` · ~${r.deadline}` : ""}`)].join("\n")
-    : "보관함이 비어 있습니다. 공고 목록에서 ⭐ 를 눌러 저장하세요.";
-  return { method: "sendMessage", chat_id: chatId, text, reply_markup: MENU };
+function numberButtons(ids: number[], back: string) {
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 5) {
+    rows.push(ids.slice(i, i + 5).map((id, k) => ({ text: `${i + k + 1}`, callback_data: `j:${id}:${back}` })));
+  }
+  return rows;
+}
+
+// kind: "l" = 보관함 최근, "u" = 7일 안에 마감
+async function listView(kind: string): Promise<View> {
+  const t = today();
+  const rows = kind === "u"
+    ? await sql`
+        select id, company, position, deadline, status from scrapped_jobs
+        where deadline between ${t} and ${plusDays(t, 7)} and status not in ${sql(SKIP_STATUSES)}
+        order by deadline limit ${LIST_SIZE}`
+    : await sql`
+        select id, company, position, deadline, status from scrapped_jobs order by id desc limit ${LIST_SIZE}`;
+
+  if (rows.length === 0) {
+    return {
+      text: kind === "u"
+        ? "7일 안에 마감되는 보관 공고가 없습니다."
+        : "보관함이 비어 있습니다. 공고 목록에서 ⭐ 를 눌러 저장하세요.",
+    };
+  }
+
+  const lines: string[] = [];
+  if (kind === "u") {
+    lines.push("⏰ 7일 안에 마감되는 보관 공고", "");
+  } else {
+    const counts = await sql`select status, count(*)::int as n from scrapped_jobs group by status`;
+    const summary = STATUSES.map((s) => {
+      const c = counts.find((r) => r.status === s);
+      return c ? `${s} ${c.n}` : "";
+    }).filter(Boolean).join(" · ");
+    lines.push(`📁 보관함 (${summary})`, "");
+  }
+  rows.forEach((r, i) => {
+    lines.push(`${i + 1}. [${r.status}] ${r.company}`, `   ${r.position}${r.deadline ? ` · ~${r.deadline}` : ""}`);
+  });
+  lines.push("", "번호를 누르면 상태를 바꾸거나 자소서를 부탁할 수 있습니다.");
+  return { text: lines.join("\n"), reply_markup: { inline_keyboard: numberButtons(rows.map((r) => r.id), kind) } };
+}
+
+async function jobView(id: number, back: string, note = ""): Promise<View> {
+  const rows = await sql`select * from scrapped_jobs where id = ${id}`;
+  if (rows.length === 0) return listView(back);
+  const j = rows[0];
+  const requested = (j.memo || "").includes(REQUEST_TAG);
+  const statusRows = [];
+  for (let i = 0; i < STATUSES.length; i += 4) {
+    statusRows.push(STATUSES.slice(i, i + 4).map((s, k) => ({
+      text: s === j.status ? `● ${s}` : s,
+      callback_data: `t:${id}:${i + k}:${back}`,
+    })));
+  }
+  return {
+    text: [
+      note,
+      `🏢 ${j.company}`,
+      `${j.position}`,
+      `상태: ${j.status}${j.deadline ? ` · 마감 ${j.deadline}` : ""}`,
+      requested ? "✍️ 자소서 요청됨 — Claude Code에서 /apply 하면 이 공고부터 씁니다" : "",
+      j.link || "",
+    ].filter(Boolean).join("\n"),
+    reply_markup: {
+      inline_keyboard: [
+        ...statusRows,
+        [
+          { text: requested ? "✍️ 요청 취소" : "✍️ 자소서 부탁", callback_data: `w:${id}:${back}` },
+          { text: "🗑 삭제", callback_data: `d:${id}:${back}` },
+          { text: "← 목록", callback_data: `${back}` },
+        ],
+      ],
+    },
+  };
+}
+
+async function setStatus(id: number, idx: number, back: string) {
+  const status = STATUSES[idx];
+  if (!status) return jobView(id, back);
+  // '지원 완료' 로 처음 바뀔 때 지원일을 남긴다 (앱과 같은 규칙)
+  await sql`
+    update scrapped_jobs set status = ${status},
+      applied_at = case when ${status} = '지원 완료' and coalesce(applied_at, '') = '' then ${today()} else applied_at end
+    where id = ${id}`;
+  return jobView(id, back, `✅ '${status}' 로 바꿨습니다`);
+}
+
+async function toggleRequest(id: number, back: string) {
+  const rows = await sql`select memo, status from scrapped_jobs where id = ${id}`;
+  if (rows.length === 0) return listView(back);
+  const memo: string = rows[0].memo || "";
+  if (memo.includes(REQUEST_TAG)) {
+    await sql`update scrapped_jobs set memo = ${memo.replace(REQUEST_TAG, "").trim()} where id = ${id}`;
+    return jobView(id, back, "자소서 요청을 취소했습니다");
+  }
+  const status = rows[0].status === "관심" ? "지원 예정" : rows[0].status;
+  await sql`update scrapped_jobs set memo = ${`${REQUEST_TAG} ${memo}`.trim()}, status = ${status} where id = ${id}`;
+  return jobView(id, back, "✍️ 자소서를 부탁했습니다");
+}
+
+async function confirmDelete(id: number, back: string): Promise<View> {
+  const rows = await sql`select company, position from scrapped_jobs where id = ${id}`;
+  if (rows.length === 0) return listView(back);
+  return {
+    text: `🗑 보관함에서 지울까요?\n\n${rows[0].company}\n${rows[0].position}\n\n저장한 자소서는 지워지지 않습니다.`,
+    reply_markup: { inline_keyboard: [[
+      { text: "지우기", callback_data: `D:${id}:${back}` },
+      { text: "취소", callback_data: `j:${id}:${back}` },
+    ]] },
+  };
+}
+
+async function remove(id: number, back: string) {
+  await sql`delete from scrapped_jobs where id = ${id}`;
+  return listView(back);
 }
 
 function help(chatId: number) {
@@ -136,13 +251,29 @@ function help(chatId: number) {
     text: [
       "구직 도우미 봇입니다. 아래 버튼을 누르세요.",
       "",
-      "📋 공고 더 보기 — 아직 안 본 공고 5건",
+      "📋 공고 더 보기 — 아직 안 본 공고 5건 (⭐ 로 보관함 저장)",
       "⏰ 마감 임박 — 보관함에서 7일 안에 마감",
-      "📁 보관함 — 저장한 공고",
+      "📁 보관함 — 지원 현황, 번호를 눌러 상태 변경·자소서 부탁·삭제",
       "",
-      "매일 아침 9시에 새 공고가 자동으로 옵니다. 공고 아래 ⭐ 를 누르면 보관함에 저장됩니다.",
+      "매일 아침 9시에 새 공고가 자동으로 옵니다.",
+      "대기업 공채 캘린더·회사별 연봉 정보는 operator24hr.com 에서 볼 수 있습니다 (출처: Operator24hr).",
     ].join("\n"),
   };
+}
+
+async function onButton(cb: { id: string; data?: string; message: { message_id: number } }, chatId: number) {
+  const where: Where = { chatId, messageId: cb.message.message_id };
+  const [op, a, b, c] = (cb.data || "").split(":");
+  // s:<job_key> 의 키에는 ':' 가 들어 있다 (saramin:123)
+  if (op === "s") return save(cb.id, (cb.data || "").slice(2));
+  if (op === "m") return more(chatId);
+  if (op === "l" || op === "u") return show(where, await listView(op));
+  if (op === "j") return show(where, await jobView(Number(a), b));
+  if (op === "t") return show(where, await setStatus(Number(a), Number(b), c));
+  if (op === "w") return show(where, await toggleRequest(Number(a), b));
+  if (op === "d") return show(where, await confirmDelete(Number(a), b));
+  if (op === "D") return show(where, await remove(Number(a), b));
+  return { method: "answerCallbackQuery", callback_query_id: cb.id };
 }
 
 Deno.serve(async (req) => {
@@ -160,16 +291,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (cb) {
-      const data: string = cb.data || "";
-      if (data === "m") return json(await more(chatId));
-      if (data.startsWith("s:")) return json(await save(cb.id, data.slice(2)));
-      return json({ method: "answerCallbackQuery", callback_query_id: cb.id });
-    }
+    if (cb) return json(await onButton(cb, chatId));
     const text: string = update.message?.text || "";
     if (text.includes("공고 더 보기")) return json(await more(chatId));
-    if (text.includes("마감 임박")) return json(await urgent(chatId));
-    if (text.includes("보관함")) return json(await saved(chatId));
+    if (text.includes("마감 임박")) return json(show({ chatId }, await listView("u")));
+    if (text.includes("보관함")) return json(show({ chatId }, await listView("l")));
     return json(help(chatId));
   } catch (e) {
     console.error(e);

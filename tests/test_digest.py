@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from jobhelper import digest
 
 TODAY = date(2026, 10, 7)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_regions(monkeypatch):
+    # 기본 지역(경기·충청·경북)이 바뀌어도 아래 기대값이 흔들리지 않게 고정한다.
+    monkeypatch.setenv("DIGEST_REGIONS", "음성,진천")
+    monkeypatch.setenv("DIGEST_PREFERRED", "없음")
 
 
 class _Diag:
@@ -30,6 +39,8 @@ JOBS = [
     _job(6, "화학 생산직", deadline="2026-10-01"),            # 마감 지남
     _job(7, "화학 생산직", location="충북전체,진천군,청주시"),  # 지역 도배
     _job(8, "단기 생산 아르바이트"),
+    _job(9, "2차전지 공장 설비보전 담당"),                    # 공무는 지원 안 함
+    _job(10, "생산기술팀 공무 신입"),
     _job(1, "이차전지 양극재 생산 오퍼레이터"),                # 중복
 ]
 
@@ -85,3 +96,14 @@ def test_old_sent_log_is_carried_over(monkeypatch):
     result = digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: (JOBS, _Diag()))
     # 예전에 이미 받은 회사1은 다시 오지 않는다.
     assert result["new"] == 1 and "회사1" not in result["message"]
+
+
+def test_preferred_region_ranks_higher_within_allowed_range():
+    jobs = [
+        _job(21, "화학 생산직", location="경기화성시"),
+        _job(22, "화학 생산직", location="충북음성군"),
+        _job(23, "화학 생산직", location="경남김해시"),   # 범위 밖
+        _job(24, "화학 생산직", location="서울강서구"),   # 범위 밖
+    ]
+    picked = digest.select(jobs, ["경기", "충북", "경북"], TODAY, ["음성"])
+    assert [j["company"] for j in picked] == ["회사22", "회사21"]
