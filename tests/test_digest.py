@@ -107,3 +107,17 @@ def test_preferred_region_ranks_higher_within_allowed_range():
     ]
     picked = digest.select(jobs, ["경기", "충북", "경북"], TODAY, ["음성"])
     assert [j["company"] for j in picked] == ["회사22", "회사21"]
+
+
+def test_telegram_falls_back_to_db_config(monkeypatch):
+    """GitHub Actions 처럼 .env 가 없어도 DB의 bot_config 로 보낼 수 있어야 한다."""
+    from jobhelper import notify, settings
+    from jobhelper.storage import connect
+
+    monkeypatch.setattr(settings, "telegram_config", lambda: None)
+    assert notify.telegram_config() is None  # 표가 없으면 조용히 None
+
+    with connect() as conn:
+        conn.execute("CREATE TABLE bot_config (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO bot_config VALUES ('bot_token', 'T'), ('chat_id', '42')")
+    assert notify.telegram_config() == ("T", "42")

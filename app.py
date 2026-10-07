@@ -702,7 +702,7 @@ if _nav == NAV_TRACKER:
 
     with alert_col:
         st.markdown('<div style="height:28px;"></div>', unsafe_allow_html=True)
-        can_notify = bool(settings.telegram_config() or settings.email_config())
+        can_notify = bool(notify.telegram_config() or settings.email_config())
         if st.button("📨 마감 알림 보내기", disabled=not can_notify,
                      help="TELEGRAM_* 또는 SMTP_* 설정이 필요합니다" if not can_notify else None):
             result = notify.run(within_days=3, today=today)

@@ -67,7 +67,8 @@ def setup() -> int:
     # 1. 봇이 읽는 표를 만든다. 비밀값은 매번 새로 만들어 이전 것을 무효로 한다.
     digest.init_digest_pool()
     webhook_secret = secrets.token_urlsafe(32)
-    _save_config({"chat_id": str(chat_id), "webhook_secret": webhook_secret})
+    # bot_token 도 넣어 두면 GitHub Actions가 DATABASE_URL 만으로 매일 요약을 보낸다 (Secrets 추가 불필요).
+    _save_config({"chat_id": str(chat_id), "webhook_secret": webhook_secret, "bot_token": token})
     storage.enable_rls_on_public_tables()  # bot_config·digest_pool 도 REST로 못 읽게
     print("1/4 DB 준비 완료")
 

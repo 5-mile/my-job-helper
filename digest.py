@@ -15,6 +15,7 @@ import sys
 
 from jobhelper import console
 from jobhelper.digest import run
+from jobhelper.notify import telegram_config
 
 console.setup()
 
@@ -25,6 +26,11 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="발송하지 않고 내용만 출력")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    if not args.dry_run and telegram_config() is None:
+        # 텔레그램을 안 쓰는 설정이면 실패가 아니다 (매일 빨간 X 가 뜨지 않게).
+        print("텔레그램 설정이 없어 건너뜁니다 (.env 또는 python telegram_bot.py setup).")
+        return 0
 
     result = run(limit=args.limit, dry_run=args.dry_run)
     print(f"수집 {result['collected']}건 → 새로 보낼 공고 {result['new']}건")

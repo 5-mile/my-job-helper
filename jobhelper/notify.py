@@ -95,9 +95,30 @@ def build_message(jobs: list[dict[str, Any]], today: date | None = None) -> str:
 
 
 # --- 발송 채널 --------------------------------------------------------------
+def telegram_config() -> tuple[str, str] | None:
+    """.env 에 있으면 그걸, 없으면 DB의 bot_config (telegram_bot.py setup 이 넣는다).
+
+    DB에 두면 GitHub Actions는 DATABASE_URL 하나만으로 텔레그램까지 보낼 수 있다.
+    """
+    conf = settings.telegram_config()
+    if conf:
+        return conf
+    try:
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM bot_config WHERE key IN ('bot_token', 'chat_id')"
+            ).fetchall()
+    except Exception:  # 표가 없으면(봇 설정 전) 텔레그램을 안 쓰는 것
+        return None
+    values = {r["key"]: r["value"] for r in rows}
+    if values.get("bot_token") and values.get("chat_id"):
+        return values["bot_token"], values["chat_id"]
+    return None
+
+
 def send_telegram(text: str, reply_markup: dict | None = None) -> bool:
     """``reply_markup`` 을 주면 메시지 아래에 버튼을 단다 (텔레그램 InlineKeyboardMarkup)."""
-    conf = settings.telegram_config()
+    conf = telegram_config()
     if not conf:
         return False
     token, chat_id = conf

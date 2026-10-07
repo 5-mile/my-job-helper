@@ -53,12 +53,8 @@ jobs:
             exit 0
           fi
           echo "has_db=yes" >> "$GITHUB_OUTPUT"
-          if [ -n "$TELEGRAM_BOT_TOKEN" ]; then echo "has_tg=yes" >> "$GITHUB_OUTPUT"; fi
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] && [ -z "$SMTP_USER" ]; then
-            echo "ready=no" >> "$GITHUB_OUTPUT"
-            echo "::notice::발송 채널(TELEGRAM_BOT_TOKEN 또는 SMTP_USER)이 없어 알림은 건너뜁니다. DB 깨우기는 계속합니다."
-            exit 0
-          fi
+          # 텔레그램 봇 정보는 Secrets 대신 DB(bot_config)에 있을 수 있으므로,
+          # DB만 있으면 알림 단계를 돌리고 발송 채널 판단은 스크립트에 맡긴다.
           echo "ready=yes" >> "$GITHUB_OUTPUT"
 
       # 알림 채널이 없어도 이건 돌아야 한다. Supabase 무료 플랜은 7일간 접속이
@@ -89,7 +85,7 @@ jobs:
       # 보관함과 무관하게, 원하는 지역의 새 공고를 몇 건 골라 보낸다.
       # 지역·검색어는 저장소 Variables 의 DIGEST_REGIONS / DIGEST_KEYWORDS 로 바꿀 수 있다.
       - name: 새 공고 요약
-        if: steps.check.outputs.has_tg == 'yes'
+        if: steps.check.outputs.has_db == 'yes'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
