@@ -53,6 +53,7 @@ jobs:
             exit 0
           fi
           echo "has_db=yes" >> "$GITHUB_OUTPUT"
+          if [ -n "$TELEGRAM_BOT_TOKEN" ]; then echo "has_tg=yes" >> "$GITHUB_OUTPUT"; fi
           if [ -z "$TELEGRAM_BOT_TOKEN" ] && [ -z "$SMTP_USER" ]; then
             echo "ready=no" >> "$GITHUB_OUTPUT"
             echo "::notice::발송 채널(TELEGRAM_BOT_TOKEN 또는 SMTP_USER)이 없어 알림은 건너뜁니다. DB 깨우기는 계속합니다."
@@ -84,3 +85,16 @@ jobs:
           python notify.py \
             --days "${{ github.event.inputs.days || '3' }}" \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      # 보관함과 무관하게, 원하는 지역의 새 공고를 몇 건 골라 보낸다.
+      # 지역·검색어는 저장소 Variables 의 DIGEST_REGIONS / DIGEST_KEYWORDS 로 바꿀 수 있다.
+      - name: 새 공고 요약
+        if: steps.check.outputs.has_tg == 'yes'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DIGEST_REGIONS: ${{ vars.DIGEST_REGIONS }}
+          DIGEST_KEYWORDS: ${{ vars.DIGEST_KEYWORDS }}
+          DIGEST_LIMIT: ${{ vars.DIGEST_LIMIT }}
+        run: python digest.py ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

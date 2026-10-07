@@ -195,6 +195,20 @@ Secrets 내용은 **화면에 출력하지 않고 파일로 저장합니다**
 
 설정 후 앱 하단의 **📨 마감 알림 보내기** 버튼으로 즉시 보내거나, 아래처럼 자동 실행하세요.
 
+## 매일 아침 새 공고 요약 (텔레그램)
+
+원하는 지역의 새 공고를 모아, 4년제 필수·사무직·마감 지난 공고를 거르고, 경력(화학·이차전지·설비)과
+가까운 순으로 5건만 텔레그램으로 보냅니다. 한 번 보낸 공고는 다시 보내지 않습니다.
+
+```bash
+python digest.py --dry-run   # 보내지 않고 미리보기
+python digest.py             # 발송
+```
+
+GitHub 저장소 Secrets에 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` 가 있으면 매일 9시 워크플로가 같이 보냅니다.
+지역·검색어·건수는 `.env` 또는 저장소 **Variables** 의 `DIGEST_REGIONS`, `DIGEST_KEYWORDS`, `DIGEST_LIMIT` 로 바꿉니다.
+키워드로 거르는 1차 선별이라, 깊은 채점은 Claude Code의 `/rank` 로 하세요.
+
 ## 알림 자동 실행
 
 앱을 열지 않아도 매일 알림을 받으려면 `notify.py`를 스케줄러에 등록합니다.
