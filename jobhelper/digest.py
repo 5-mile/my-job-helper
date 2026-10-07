@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date
@@ -95,31 +96,80 @@ def select(jobs: list[dict[str, Any]], regions: list[str], today: date) -> list[
     return picked
 
 
-def init_digest_log(db_path: str | None = None) -> None:
+# 텔레그램 봇(supabase/functions/telegram-bot)이 버튼 처리에 쓰는 필드. 봇은 이 JSON만 본다.
+POOL_FIELDS = (
+    "company", "position", "location", "career", "education", "employment",
+    "deadline", "date", "category", "sector",
+)
+
+
+def init_digest_pool(db_path: str | None = None) -> None:
+    """골라 둔 후보를 쌓아 두는 곳. 매일 보내고 남은 건 봇의 '다음 5건' 으로 꺼낸다."""
     with connect(db_path) as conn:
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS digest_sent (job_key TEXT PRIMARY KEY, sent_at TEXT)"
+            "CREATE TABLE IF NOT EXISTS digest_pool ("
+            "job_key TEXT PRIMARY KEY, data TEXT, score INTEGER, deadline TEXT, "
+            "collected_at TEXT, sent_at TEXT)"
+        )
+        # 예전 버전이 남긴 발송 기록을 옮겨, 이미 받은 공고가 다시 오지 않게 한다.
+        try:
+            old = conn.execute("SELECT job_key, sent_at FROM digest_sent").fetchall()
+        except Exception:
+            old = []
+    if old:
+        with connect(db_path) as conn:
+            conn.executemany(
+                insert_or_ignore("digest_pool", ["job_key", "data", "score", "deadline", "collected_at", "sent_at"], ["job_key"]),
+                [(r["job_key"], "{}", 0, "", r["sent_at"], r["sent_at"]) for r in old],
+            )
+
+
+def _add_to_pool(jobs: list[dict[str, Any]], db_path: str | None = None) -> None:
+    """새 후보만 넣는다. 이미 있는 건 그대로 두어 보낸 기록이 지워지지 않게 한다."""
+    if not jobs:
+        return
+    stamp = now_iso()
+    rows = []
+    for j in jobs:
+        data = {k: j.get(k) or "" for k in POOL_FIELDS}
+        data["link"] = short_link(j)
+        rows.append((j["key"], json.dumps(data, ensure_ascii=False), j["score"], j.get("deadline") or "", stamp, None))
+    with connect(db_path) as conn:
+        conn.executemany(
+            insert_or_ignore("digest_pool", ["job_key", "data", "score", "deadline", "collected_at", "sent_at"], ["job_key"]),
+            rows,
         )
 
 
-def _unsent(jobs: list[dict[str, Any]], db_path: str | None = None) -> list[dict[str, Any]]:
-    if not jobs:
-        return []
+def next_batch(limit: int, today: date, db_path: str | None = None) -> list[dict[str, Any]]:
+    """아직 안 보낸 후보 중 점수 높은 순. 마감 지난 건 뺀다."""
     with connect(db_path) as conn:
-        sent = {r["job_key"] for r in conn.execute("SELECT job_key FROM digest_sent").fetchall()}
-    return [j for j in jobs if j["key"] not in sent]
+        rows = conn.execute(
+            "SELECT job_key, data FROM digest_pool WHERE sent_at IS NULL "
+            "AND (deadline = '' OR deadline >= ?) ORDER BY score DESC, collected_at DESC LIMIT ?",
+            (today.isoformat(), limit),
+        ).fetchall()
+    return [{**json.loads(r["data"]), "key": r["job_key"]} for r in rows]
 
 
 def _mark_sent(keys: list[str], db_path: str | None = None) -> None:
+    stamp = now_iso()
     with connect(db_path) as conn:
-        conn.executemany(
-            insert_or_ignore("digest_sent", ["job_key", "sent_at"], ["job_key"]),
-            [(k, now_iso()) for k in keys],
-        )
+        conn.executemany("UPDATE digest_pool SET sent_at = ? WHERE job_key = ?", [(stamp, k) for k in keys])
 
 
-def build_message(jobs: list[dict[str, Any]], today: date) -> str:
-    lines = [f"📋 새 공고 {len(jobs)}건 ({today.month}/{today.day})", ""]
+def keyboard(jobs: list[dict[str, Any]]) -> dict:
+    """공고별 ⭐ 버튼(보관함 저장) + 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
+    return {
+        "inline_keyboard": [
+            [{"text": f"⭐{n}", "callback_data": f"s:{j['key']}"} for n, j in enumerate(jobs, 1)],
+            [{"text": "다음 5건 ▶", "callback_data": "m"}],
+        ]
+    }
+
+
+def build_message(jobs: list[dict[str, Any]], title: str) -> str:
+    lines = [f"📋 {title} {len(jobs)}건", ""]
     for n, j in enumerate(jobs, 1):
         location = (j.get("location") or "").split(",")[0]
         cond = " · ".join(x for x in (j.get("career"), j.get("education"), j.get("employment")) if x)
@@ -127,10 +177,10 @@ def build_message(jobs: list[dict[str, Any]], today: date) -> str:
             f"{n}. {j.get('company')} · {location}",
             f"   {j.get('position')}",
             f"   {cond} · 마감 {j.get('deadline') or '상시/상세 확인'}",
-            f"   {short_link(j)}",
+            f"   {j.get('link') or short_link(j)}",
             "",
         ]
-    lines.append("자세히 보려면 Claude Code에서 /rank 또는 /apply <주소>")
+    lines.append("⭐ 번호를 누르면 보관함에 저장됩니다.")
     return "\n".join(lines)
 
 
@@ -143,21 +193,23 @@ def run(
 ) -> dict[str, Any]:
     today = today or date.today()
     limit = limit or int(settings.get("DIGEST_LIMIT") or DEFAULT_LIMIT)
-    init_digest_log(db_path)
+    init_digest_pool(db_path)
 
     jobs, diagnostics = fetch(_csv("DIGEST_KEYWORDS", DEFAULT_KEYWORDS), "relation", 2, [])
     if diagnostics.warning:
         log.warning(diagnostics.warning)
 
-    fresh = _unsent(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today), db_path)[:limit]
+    # ponytail: 풀은 지우지 않고 쌓인다 (하루 수십 건, 행당 수백 바이트). 커지면 오래된 sent 행 정리.
+    _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today), db_path)
+    fresh = next_batch(limit, today, db_path)
     result: dict[str, Any] = {"collected": len(jobs), "new": len(fresh), "sent": False}
     if not fresh:
         return result
 
-    result["message"] = build_message(fresh, today)
+    result["message"] = build_message(fresh, f"새 공고 ({today.month}/{today.day})")
     if dry_run:
         return result
-    if send_telegram(result["message"]):
+    if send_telegram(result["message"], keyboard(fresh)):
         _mark_sent([j["key"] for j in fresh], db_path)
         result["sent"] = True
     return result

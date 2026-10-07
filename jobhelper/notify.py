@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import smtplib
 from datetime import date
@@ -94,15 +95,19 @@ def build_message(jobs: list[dict[str, Any]], today: date | None = None) -> str:
 
 
 # --- 발송 채널 --------------------------------------------------------------
-def send_telegram(text: str) -> bool:
+def send_telegram(text: str, reply_markup: dict | None = None) -> bool:
+    """``reply_markup`` 을 주면 메시지 아래에 버튼을 단다 (텔레그램 InlineKeyboardMarkup)."""
     conf = settings.telegram_config()
     if not conf:
         return False
     token, chat_id = conf
+    data = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            data={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+            data=data,
             timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
