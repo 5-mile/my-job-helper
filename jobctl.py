@@ -12,6 +12,7 @@
     python jobctl.py save --file job.json          # 보관함에 추가
     python jobctl.py letters --company 기본          # 저장된 자소서 (기본 자소서 등)
     python jobctl.py save-letter --company 포스코 --question "지원 동기" --file a.txt
+    python jobctl.py check --file letter.md --limits 500,700   # 글자 수·상투어·숫자 반복 검사
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 
-from jobhelper import ai, console, db, profile as profile_mod
+from jobhelper import ai, console, db, lettercheck, profile as profile_mod
 from jobhelper.config import REQUEST_TIMEOUT, SARAMIN_ALL_SORTS, USER_AGENT
 from jobhelper.scrapers.saramin import fetch_saramin_jobs_detailed
 
@@ -150,6 +151,15 @@ def cmd_save_letter(args) -> int:
     return 0
 
 
+def cmd_check(args) -> int:
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read()
+    limits = [int(x) for x in args.limits.split(",")] if args.limits else None
+    result = lettercheck.check(text, limits)
+    print(lettercheck.report(result))
+    return 1 if result["errors"] else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -193,6 +203,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--file", required=True, help="답변이 든 UTF-8 텍스트 파일")
     s.add_argument("--job-id", type=int)
     s.set_defaults(fn=cmd_save_letter)
+
+    s = sub.add_parser("check", help="자소서 기계 검사")
+    s.add_argument("--file", required=True, help="'■ 1. 문항' 줄로 나뉜 UTF-8 텍스트")
+    s.add_argument("--limits", help="문항별 글자 제한, 쉼표 구분 (하나면 전 문항)")
+    s.set_defaults(fn=cmd_check)
 
     args = ap.parse_args(argv)
     return args.fn(args)
