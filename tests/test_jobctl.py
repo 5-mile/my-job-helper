@@ -94,3 +94,9 @@ def test_saved_requested_only_and_notify_splits_long_text(monkeypatch, capsys, t
     msg.write_text("\n\n".join(["가" * 1500] * 4), encoding="utf-8")
     code, _ = _run(monkeypatch, capsys, ["notify", "--file", str(msg)])
     assert code == 0 and len(sent) == 2 and all(len(s) <= 4096 for s in sent)
+
+
+def test_is_closed_detects_saramin_expired_markers():
+    assert jobctl.is_closed('<span class="sri_btn_expired_apply" >접수마감</span>')
+    assert jobctl.is_closed('<div class="jv_cont jv_detail expired">')
+    assert not jobctl.is_closed('<button class="sri_btn_lg">입사지원</button>')

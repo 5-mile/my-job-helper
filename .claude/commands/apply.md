@@ -24,6 +24,7 @@ python jobctl.py detail <link>
 
 - 프로필 `empty` 가 true 면 멈추고 `/profile` 을 먼저 안내한다.
 - `[확인 필요]` 가 붙은 프로필 내용은 **쓰지 않는다**. 꼭 필요하면 사용자에게 먼저 확인받는다.
+- `CLOSED` 면 조기 마감된 공고다. 쓰지 말고 사용자에게 알린다.
 - `IMAGE_ONLY` 면 본문이 이미지다. 추측하지 말고 **본문을 붙여넣어 달라고** 한다.
 - `profile` 출력의 `fabrication_rule` 이 이 명령 전체의 최우선 규칙이다.
 

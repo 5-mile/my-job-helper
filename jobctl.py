@@ -87,6 +87,12 @@ def cmd_search(args) -> int:
 # 공고 페이지 본문은 iframe(view-detail)에 따로 있다. 바깥 페이지는 메뉴뿐이다.
 DETAIL_URL = "https://www.saramin.co.kr/zf_user/jobs/relay/view-detail?rec_idx={}"
 DETAIL_MAX_CHARS = 6000
+VIEW_URL = "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx={}"
+
+
+def is_closed(view_html: str) -> bool:
+    """사람인 공고 화면의 '접수마감' 버튼·마감 안내로 조기 마감을 알아본다."""
+    return "sri_btn_expired_apply" in view_html or "jv_detail expired" in view_html
 
 
 def cmd_detail(args) -> int:
@@ -94,6 +100,11 @@ def cmd_detail(args) -> int:
     if not m:
         print("사람인 공고 주소나 rec_idx 번호가 아닙니다.", file=sys.stderr)
         return 1
+    # 마감일 전에 조기 마감되는 공고가 있어, 본문보다 먼저 실제 화면의 마감 표시를 본다.
+    page = requests.get(VIEW_URL.format(m.group(1)), headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
+    if is_closed(page.text):
+        print("CLOSED: 이미 접수가 마감된 공고입니다.")
+        return 3
     resp = requests.get(DETAIL_URL.format(m.group(1)), headers={"User-Agent": USER_AGENT},
                         timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
