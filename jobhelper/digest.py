@@ -168,12 +168,20 @@ def _mark_sent(keys: list[str], db_path: str | None = None) -> None:
         conn.executemany("UPDATE digest_pool SET sent_at = ? WHERE job_key = ?", [(stamp, k) for k in keys])
 
 
+# 텔레그램 봇(index.ts)의 CATEGORY_ROW 와 같은 값
+CATEGORY_BUTTONS = [
+    {"text": "🏢 대기업", "callback_data": "m:대기업"},
+    {"text": "🏭 중견", "callback_data": "m:중견기업"},
+    {"text": "🌐 외국계", "callback_data": "m:외국계"},
+]
+
+
 def keyboard(jobs: list[dict[str, Any]]) -> dict:
-    """공고별 ⭐ 버튼(보관함 저장) + 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
+    """공고별 ⭐ 버튼(보관함 저장) + 분류별 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
     return {
         "inline_keyboard": [
             [{"text": f"⭐{n}", "callback_data": f"s:{j['key']}"} for n, j in enumerate(jobs, 1)],
-            [{"text": "다음 5건 ▶", "callback_data": "m"}],
+            CATEGORY_BUTTONS,
         ]
     }
 
