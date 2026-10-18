@@ -109,7 +109,7 @@ def select(
 # 텔레그램 봇(supabase/functions/telegram-bot)이 버튼 처리에 쓰는 필드. 봇은 이 JSON만 본다.
 POOL_FIELDS = (
     "company", "position", "location", "career", "education", "employment",
-    "deadline", "date", "category", "sector",
+    "deadline", "date", "category", "sector", "pop",
 )
 
 
@@ -151,6 +151,18 @@ def _add_to_pool(jobs: list[dict[str, Any]], db_path: str | None = None) -> None
         )
 
 
+def _refresh_pop(pop: dict[str, int], db_path: str | None = None) -> None:
+    """이미 풀에 있는 공고도 오늘 기준 인기 순위로 갱신한다."""
+    if not pop:
+        return
+    with connect(db_path) as conn:
+        for key, data in [(r["job_key"], r["data"]) for r in conn.execute("SELECT job_key, data FROM digest_pool WHERE data <> '{}'").fetchall()]:
+            d = json.loads(data)
+            if d.get("pop") != pop.get(key, ""):
+                conn.execute("UPDATE digest_pool SET data = ? WHERE job_key = ?",
+                             (json.dumps({**d, "pop": pop.get(key, "")}, ensure_ascii=False), key))
+
+
 def next_batch(limit: int, today: date, db_path: str | None = None) -> list[dict[str, Any]]:
     """아직 안 보낸 후보 중 점수 높은 순. 마감 지난 건 뺀다."""
     with connect(db_path) as conn:
@@ -170,9 +182,9 @@ def _mark_sent(keys: list[str], db_path: str | None = None) -> None:
 
 # 텔레그램 봇(index.ts)의 CATEGORY_ROW 와 같은 값
 CATEGORY_BUTTONS = [
-    {"text": "🏢 대기업", "callback_data": "m:대기업"},
-    {"text": "🏭 중견", "callback_data": "m:중견기업"},
-    {"text": "🌐 외국계", "callback_data": "m:외국계"},
+    {"text": "🏢 대기업", "callback_data": "m:대기업:0"},
+    {"text": "🏭 중견", "callback_data": "m:중견기업:0"},
+    {"text": "🌐 외국계", "callback_data": "m:외국계:0"},
 ]
 
 
@@ -266,7 +278,15 @@ def run(
         log.warning(diagnostics.warning)
 
     # ponytail: 풀은 지우지 않고 쌓인다 (하루 수십 건, 행당 수백 바이트). 커지면 오래된 sent 행 정리.
-    _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED)), db_path)
+    # 인기순: 사람인 '지원자 많은순'(apply_cnt) 목록의 순서를 pop(작을수록 인기)으로 남긴다.
+    # ponytail: 키워드·쪽마다 따로 나온 순서를 이어 붙인 근사치. 정밀한 순위가 필요하면 지원자 수를 직접 읽는다.
+    pop_jobs, _ = fetch(_csv("DIGEST_KEYWORDS", DEFAULT_KEYWORDS), "apply_cnt", 2, [])
+    pop = {}
+    for j in pop_jobs:
+        pop.setdefault(job_key(j), len(pop))
+    jobs = [*jobs, *pop_jobs]
+    _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED))], db_path)
+    _refresh_pop(pop, db_path)
     if not dry_run:
         db.init_db(db_path)
         expired = db.purge_expired(today.isoformat(), db_path)

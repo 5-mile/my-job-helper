@@ -159,3 +159,15 @@ def test_expired_interest_jobs_are_purged_but_applied_ones_stay():
         db.save_job({"company": company, "position": "생산", "status": status, "deadline": deadline})
     assert db.purge_expired(TODAY.isoformat()) == ["옛관심"]
     assert {j["company"] for j in db.load_jobs()} == {"아직관심", "옛지원", "상시"}
+
+
+def test_pool_keeps_popularity_rank(monkeypatch):
+    import json
+
+    from jobhelper.storage import connect
+
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: True)
+    digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: (JOBS, _Diag()))
+    with connect() as conn:
+        pops = {r["job_key"]: json.loads(r["data"]).get("pop") for r in conn.execute("SELECT job_key, data FROM digest_pool WHERE data <> '{}'")}
+    assert pops["saramin:1"] == 0 and pops["saramin:2"] == 1  # 지원자 많은순 목록의 등장 순서

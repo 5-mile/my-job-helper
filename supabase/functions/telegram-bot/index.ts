@@ -38,7 +38,7 @@ async function config(key: string): Promise<string | undefined> {
 
 // digest.py 의 build_message 와 같은 모양
 function formatJobs(jobs: Job[], title: string): string {
-  const lines = [`📋 ${title} ${jobs.length}건`, ""];
+  const lines = [`📋 ${title}`, ""];
   jobs.forEach((j, i) => {
     const cond = [j.career, j.education, j.employment].filter(Boolean).join(" · ");
     lines.push(
@@ -50,45 +50,54 @@ function formatJobs(jobs: Job[], title: string): string {
     );
   });
   lines.push("⭐ 번호를 누르면 보관함에 저장됩니다.");
-  return lines.join("\n");
+  return lines.join("
+");
 }
 
-// digest.py 의 CATEGORY_BUTTONS 와 같은 값. 누르면 그 분류만 다음 5건.
+// digest.py 의 CATEGORY_BUTTONS 와 같은 값. 누르면 그 분류의 인기순 1쪽.
 const CATEGORY_ROW = [
-  { text: "🏢 대기업", callback_data: "m:대기업" },
-  { text: "🏭 중견", callback_data: "m:중견기업" },
-  { text: "🌐 외국계", callback_data: "m:외국계" },
+  { text: "🏢 대기업", callback_data: "m:대기업:0" },
+  { text: "🏭 중견", callback_data: "m:중견기업:0" },
+  { text: "🌐 외국계", callback_data: "m:외국계:0" },
 ];
 
-function jobButtons(keys: string[]) {
+function jobButtons(keys: string[], category: string, page: number, pages: number) {
+  const nav = [];
+  if (page > 0) nav.push({ text: "◀ 이전", callback_data: `p:${category}:${page - 1}` });
+  if (page < pages - 1) nav.push({ text: "다음 ▶", callback_data: `p:${category}:${page + 1}` });
   return {
     inline_keyboard: [
       keys.map((k, i) => ({ text: `⭐${i + 1}`, callback_data: `s:${k}` })),
+      ...(nav.length ? [nav] : []),
       CATEGORY_ROW,
     ],
   };
 }
 
-// 📋 공고 더 보기 — 매일 모아 둔 후보 중 아직 안 보낸 것
-async function more(chatId: number, category = "") {
-  const rows = await sql`
-    select job_key, data from digest_pool
-    where sent_at is null and (deadline = '' or deadline >= ${today()})
-      ${category ? sql`and data::json->>'category' = ${category}` : sql``}
-    order by score desc, collected_at desc limit ${BATCH}`;
-  if (rows.length === 0) {
+// 📋 공고 더 보기 / 분류 버튼 / 이전·다음 — 모아 둔 후보를 지원자 많은 순(사람인 apply_cnt)으로 5건씩.
+// where.messageId 가 있으면 그 메시지를 고쳐(이전·다음), 없으면 새로 보낸다.
+async function more(where: Where, category = "", page = 0) {
+  const filter = category ? sql`and data::json->>'category' = ${category}` : sql``;
+  const live = sql`data <> '{}' and (deadline = '' or deadline >= ${today()}) ${filter}`;
+  const [{ n }] = await sql`select count(*)::int as n from digest_pool where ${live}`;
+  if (n === 0) {
     return {
-      method: "sendMessage", chat_id: chatId, reply_markup: MENU,
-      text: `${category || "새"} 공고가 더 없습니다. 매일 아침 9시에 새로 모읍니다.`,
+      method: "sendMessage", chat_id: where.chatId, reply_markup: MENU,
+      text: `${category || "새"} 공고가 없습니다. 매일 아침 9시에 새로 모읍니다.`,
     };
   }
+  const pages = Math.ceil(n / BATCH);
+  page = Math.min(Math.max(page, 0), pages - 1);
+  const rows = await sql`
+    select job_key, data from digest_pool where ${live}
+    order by coalesce(nullif(data::json->>'pop', '')::int, 999999), score desc, collected_at desc
+    limit ${BATCH} offset ${page * BATCH}`;
   const keys = rows.map((r) => r.job_key as string);
-  await sql`update digest_pool set sent_at = ${kst().slice(0, 19)} where job_key in ${sql(keys)}`;
-  return {
-    method: "sendMessage", chat_id: chatId, disable_web_page_preview: true,
-    text: formatJobs(rows.map((r) => JSON.parse(r.data)), category ? `${category} 공고` : "공고"),
-    reply_markup: jobButtons(keys),
-  };
+  await sql`update digest_pool set sent_at = ${kst().slice(0, 19)} where sent_at is null and job_key in ${sql(keys)}`;
+  return show(where, {
+    text: formatJobs(rows.map((r) => JSON.parse(r.data)), `${category || "전체"} 인기순 ${page + 1}/${pages}쪽 (${n}건)`),
+    reply_markup: jobButtons(keys, category, page, pages),
+  });
 }
 
 // ⭐ — 그 공고를 앱 보관함(scrapped_jobs)에 넣는다. db.save_job 과 같은 컬럼.
@@ -282,7 +291,7 @@ function help(chatId: number) {
     text: [
       "구직 도우미 봇입니다. 아래 버튼을 누르세요.",
       "",
-      "📋 공고 더 보기 — 아직 안 본 공고 5건 (⭐ 로 보관함 저장)",
+      "📋 공고 더 보기 — 인기순 5건씩, ◀▶ 로 넘기기 (⭐ 로 보관함 저장)",
       "⏰ 마감 임박 — 보관함에서 7일 안에 마감",
       "📁 보관함 — 지원 현황, 번호를 눌러 상태 변경·자소서 부탁·삭제",
       "",
@@ -298,7 +307,9 @@ async function onButton(cb: { id: string; data?: string; message: { message_id: 
   // s:<job_key> 의 키에는 ':' 가 들어 있다 (saramin:123)
   if (op === "s") return save(cb.id, (cb.data || "").slice(2));
   if (op === "y" || op === "n") return askAnswer(where, (cb.data || "").slice(2), op === "y");
-  if (op === "m") return more(chatId, a);
+  // m:<분류>:0 은 새 메시지로, p:<분류>:<쪽>(이전·다음)은 같은 메시지를 고친다.
+  if (op === "m") return more({ chatId }, a, 0);
+  if (op === "p") return more(where, a, Number(b) || 0);
   if (op === "l" || op === "u") return show(where, await listView(op));
   if (op === "j") return show(where, await jobView(Number(a), b));
   if (op === "t") return show(where, await setStatus(Number(a), Number(b), c));
@@ -325,7 +336,7 @@ Deno.serve(async (req) => {
   try {
     if (cb) return json(await onButton(cb, chatId));
     const text: string = update.message?.text || "";
-    if (text.includes("공고 더 보기")) return json(await more(chatId));
+    if (text.includes("공고 더 보기")) return json(await more({ chatId }));
     if (text.includes("마감 임박")) return json(show({ chatId }, await listView("u")));
     if (text.includes("보관함")) return json(show({ chatId }, await listView("l")));
     return json(help(chatId));
