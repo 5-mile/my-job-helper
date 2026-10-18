@@ -8,7 +8,8 @@
     python jobctl.py save-profile --file p.json    # 프로필 저장(일부 항목만도 가능)
     python jobctl.py search 생산 품질 --pages 2    # 사람인 실시간 수집
     python jobctl.py detail <공고주소>             # 공고 본문
-    python jobctl.py saved                         # 보관함
+    python jobctl.py saved [--requested]           # 보관함 (자소서 요청만)
+    python jobctl.py notify --file msg.txt         # 텔레그램으로 보내기
     python jobctl.py save --file job.json          # 보관함에 추가
     python jobctl.py letters --company 기본          # 저장된 자소서 (기본 자소서 등)
     python jobctl.py save-letter --company 포스코 --question "지원 동기" --file a.txt
@@ -21,11 +22,13 @@ import argparse
 import json
 import re
 import sys
+import tempfile
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 
-from jobhelper import ai, console, db, lettercheck, profile as profile_mod
+from jobhelper import ai, console, db, lettercheck, notify, profile as profile_mod
 from jobhelper.config import REQUEST_TIMEOUT, SARAMIN_ALL_SORTS, USER_AGENT
 from jobhelper.scrapers.saramin import fetch_saramin_jobs_detailed
 
@@ -96,8 +99,17 @@ def cmd_detail(args) -> int:
     resp.raise_for_status()
     text = " ".join(BeautifulSoup(resp.text, "lxml").get_text(" ").split())
     if len(text) < 200:
-        # 본문이 통이미지인 공고. 지어내지 말고 사용자에게 붙여넣기를 부탁해야 한다.
+        # 본문이 통이미지인 공고. 사람인 이미지 서버의 그림만 내려받아 Claude 가 직접 읽게 한다.
         print("IMAGE_ONLY: 본문이 이미지라 글자를 읽을 수 없습니다.")
+        out_dir = Path(tempfile.gettempdir()) / "jobctl-detail" / m.group(1)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for n, img in enumerate(BeautifulSoup(resp.text, "lxml").find_all("img"), 1):
+            src = img.get("src") or ""
+            if not re.match(r"https://pds\.saramin\.co\.kr/", src):
+                continue
+            path = out_dir / f"{n}{Path(src).suffix or '.png'}"
+            path.write_bytes(requests.get(src, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT).content)
+            print(f"IMAGE: {path}")
         return 2
     print(text[:DETAIL_MAX_CHARS])
     return 0
@@ -108,7 +120,26 @@ def cmd_saved(args) -> int:
         {"id": j["id"], "status": j["status"], "memo": j.get("memo") or "",
          **{k: j.get(k) for k in JOB_FIELDS if j.get(k)}}
         for j in db.load_jobs(args.status)
+        if not args.requested or REQUEST_TAG in (j.get("memo") or "")
     ])
+    return 0
+
+
+def cmd_notify(args) -> int:
+    """텔레그램으로 보낸다. 한 메시지 4096자 제한이라 문단 단위로 나눠 보낸다."""
+    with open(args.file, encoding="utf-8") as fh:
+        text = fh.read().strip()
+    chunks, cur = [], ""
+    for para in text.split("\n\n"):
+        if cur and len(cur) + len(para) + 2 > 3900:
+            chunks.append(cur)
+            cur = ""
+        cur = f"{cur}\n\n{para}" if cur else para
+    chunks.append(cur)
+    if not all(notify.send_telegram(c[:4096]) for c in chunks if c):
+        print("텔레그램 발송 실패", file=sys.stderr)
+        return 1
+    print(f"텔레그램으로 보냈습니다 ({len(chunks)}개 메시지)")
     return 0
 
 
@@ -183,7 +214,12 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("saved")
     s.add_argument("--status")
+    s.add_argument("--requested", action="store_true", help="자소서 요청이 붙은 공고만")
     s.set_defaults(fn=cmd_saved)
+
+    s = sub.add_parser("notify", help="텔레그램으로 보내기")
+    s.add_argument("--file", required=True, help="보낼 UTF-8 텍스트 파일")
+    s.set_defaults(fn=cmd_notify)
 
     s = sub.add_parser("save")
     s.add_argument("--file", help="UTF-8 JSON 파일 (없으면 표준입력)")

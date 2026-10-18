@@ -188,7 +188,7 @@ async function jobView(id: number, back: string, note = ""): Promise<View> {
       `🏢 ${j.company}`,
       `${j.position}`,
       `상태: ${j.status}${j.deadline ? ` · 마감 ${j.deadline}` : ""}`,
-      requested ? "✍️ 자소서 요청됨 — Claude Code에서 /apply 하면 이 공고부터 씁니다" : "",
+      requested ? "✍️ 자소서 요청됨 — PC가 켜져 있으면 1시간 안에 보내드립니다" : "",
       j.link || "",
     ].filter(Boolean).join("\n"),
     reply_markup: {
@@ -226,6 +226,29 @@ async function toggleRequest(id: number, back: string) {
   const status = rows[0].status === "관심" ? "지원 예정" : rows[0].status;
   await sql`update scrapped_jobs set memo = ${`${REQUEST_TAG} ${memo}`.trim()}, status = ${status} where id = ${id}`;
   return jobView(id, back, "✍️ 자소서를 부탁했습니다");
+}
+
+// 아침 1순위 공고의 "자소서 쓸까요?" — 예: 보관함에 넣고 자소서 요청 표시. PC의 예약 작업(/auto-apply)이 집어 간다.
+async function askAnswer(where: Where, key: string, yes: boolean) {
+  const rows = await sql`select data from digest_pool where job_key = ${key}`;
+  if (rows.length === 0) return show(where, { text: "공고 정보를 찾지 못했습니다." });
+  const j: Job = JSON.parse(rows[0].data);
+  const head = `${j.company}\n${j.position}\n${j.link}`;
+  if (!yes) return show(where, { text: `${head}\n\n건너뛰었습니다.` });
+  await sql`
+    insert into scrapped_jobs
+      (source, company, position, date, link, location, category, rating, welfares,
+       deadline, status, memo, applied_at, created_at)
+    values
+      ('텔레그램', ${j.company}, ${j.position}, ${j.date || ""}, ${j.link}, ${j.location || ""},
+       ${j.category || ""}, 3.0, '', ${j.deadline || ""}, '지원 예정', ${REQUEST_TAG}, '', ${kst().slice(0, 19)})
+    on conflict (company, position) do update set
+      memo = case when scrapped_jobs.memo like ${"%" + REQUEST_TAG + "%"} then scrapped_jobs.memo
+                  else trim(${REQUEST_TAG}::text || ' ' || scrapped_jobs.memo) end,
+      status = case when scrapped_jobs.status = '관심' then '지원 예정' else scrapped_jobs.status end`;
+  return show(where, {
+    text: `${head}\n\n✍️ 자소서를 요청했습니다. PC가 켜져 있으면 1시간 안에 완성본과 지원 링크를 보내드립니다.`,
+  });
 }
 
 async function confirmDelete(id: number, back: string): Promise<View> {
@@ -266,6 +289,7 @@ async function onButton(cb: { id: string; data?: string; message: { message_id: 
   const [op, a, b, c] = (cb.data || "").split(":");
   // s:<job_key> 의 키에는 ':' 가 들어 있다 (saramin:123)
   if (op === "s") return save(cb.id, (cb.data || "").slice(2));
+  if (op === "y" || op === "n") return askAnswer(where, (cb.data || "").slice(2), op === "y");
   if (op === "m") return more(chatId);
   if (op === "l" || op === "u") return show(where, await listView(op));
   if (op === "j") return show(where, await jobView(Number(a), b));

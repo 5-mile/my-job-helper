@@ -79,3 +79,18 @@ def test_done_request_strips_only_the_tag(monkeypatch, capsys):
     code, _ = _run(monkeypatch, capsys, ["done-request", "--job-id", str(job_id)])
     assert code == 0
     assert db.load_jobs()[0]["memo"] == "10/18 마감"
+
+
+def test_saved_requested_only_and_notify_splits_long_text(monkeypatch, capsys, tmp_path):
+    _init()
+    db.save_job({"company": "가", "position": "OP", "memo": "[자소서 요청]"})
+    db.save_job({"company": "나", "position": "OP"})
+    _, out = _run(monkeypatch, capsys, ["saved", "--requested"])
+    assert [j["company"] for j in json.loads(out)] == ["가"]
+
+    sent = []
+    monkeypatch.setattr(jobctl.notify, "send_telegram", lambda text, kb=None: sent.append(text) or True)
+    msg = tmp_path / "m.txt"
+    msg.write_text("\n\n".join(["가" * 1500] * 4), encoding="utf-8")
+    code, _ = _run(monkeypatch, capsys, ["notify", "--file", str(msg)])
+    assert code == 0 and len(sent) == 2 and all(len(s) <= 4096 for s in sent)

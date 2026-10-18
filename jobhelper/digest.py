@@ -193,6 +193,25 @@ def build_message(jobs: list[dict[str, Any]], title: str) -> str:
     return "\n".join(lines)
 
 
+def build_ask(job: dict[str, Any]) -> tuple[str, dict]:
+    """1순위 공고에 '자소서 쓸까요?' 를 묻는다. [예] 를 누르면 봇이 보관함에 넣고 자소서를 요청한다."""
+    location = (job.get("location") or "").split(",")[0]
+    text = "\n".join([
+        "✍️ 오늘의 1순위 공고",
+        "",
+        f"{job.get('company')} · {location}",
+        f"{job.get('position')}",
+        f"마감 {job.get('deadline') or '상시/상세 확인'}",
+        f"{job.get('link') or short_link(job)}",
+        "",
+        "이 공고 자소서 쓸까요?",
+    ])
+    return text, {"inline_keyboard": [[
+        {"text": "예", "callback_data": f"y:{job['key']}"},
+        {"text": "아니오", "callback_data": f"n:{job['key']}"},
+    ]]}
+
+
 def run(
     limit: int | None = None,
     dry_run: bool = False,
@@ -221,4 +240,5 @@ def run(
     if send_telegram(result["message"], keyboard(fresh)):
         _mark_sent([j["key"] for j in fresh], db_path)
         result["sent"] = True
+        send_telegram(*build_ask(fresh[0]))  # 점수순이라 첫 번째가 1순위
     return result

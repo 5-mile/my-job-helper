@@ -64,8 +64,13 @@ def test_run_sends_once_and_never_again(monkeypatch):
     assert stars == ["s:saramin:1", "s:saramin:2"]
     assert all(len(c.encode()) <= 64 for c in stars)
 
+    # 이어서 1순위 공고에 '자소서 쓸까요?' 를 예/아니오 버튼과 함께 묻는다.
+    ask_text, ask_kb = sent[1]
+    assert "회사1" in ask_text and "자소서 쓸까요" in ask_text
+    assert [b["callback_data"] for b in ask_kb["inline_keyboard"][0]] == ["y:saramin:1", "n:saramin:1"]
+
     second = digest.run(limit=5, today=TODAY, fetch=fetch)
-    assert second["new"] == 0 and len(sent) == 1
+    assert second["new"] == 0 and len(sent) == 2
 
 
 def test_leftovers_wait_in_pool_for_next_button(monkeypatch):
