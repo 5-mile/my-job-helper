@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Iterable
 
 from .config import APPLICATION_STATUSES
@@ -141,6 +142,16 @@ def update_job(job_id: int, db_path: str | None = None, **fields: Any) -> None:
 def delete_job(job_id: int, db_path: str | None = None) -> None:
     with connect(db_path) as conn:
         conn.execute("DELETE FROM scrapped_jobs WHERE id = ?", (job_id,))
+
+
+def purge_expired(today: str, db_path: str | None = None) -> list[str]:
+    """마감일이 지난 '관심' 공고(메모 없음)를 지우고 회사명을 돌려준다. 지원 예정 이상은 기록이라 남긴다."""
+    gone = [j for j in load_jobs("관심", db_path)
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", j.get("deadline") or "")
+            and j["deadline"] < today and not (j.get("memo") or "").strip()]
+    for j in gone:
+        delete_job(j["id"], db_path)
+    return [j["company"] for j in gone]
 
 
 def saved_keys(db_path: str | None = None) -> set[str]:

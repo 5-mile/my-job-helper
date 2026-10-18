@@ -268,6 +268,10 @@ def run(
     # ponytail: 풀은 지우지 않고 쌓인다 (하루 수십 건, 행당 수백 바이트). 커지면 오래된 sent 행 정리.
     _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED)), db_path)
     if not dry_run:
+        db.init_db(db_path)
+        expired = db.purge_expired(today.isoformat(), db_path)
+        if expired:
+            send_telegram(f"🗑 마감 지난 관심 공고 {len(expired)}건을 보관함에서 지웠습니다: {', '.join(expired[:10])}")
         auto = auto_request(today, db_path)
         if auto:
             send_telegram(build_auto_notice(auto))

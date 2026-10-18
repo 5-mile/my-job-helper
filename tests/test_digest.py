@@ -148,3 +148,14 @@ def test_lookalike_names_are_not_big_companies():
 
     assert classify_company("(주)삼성테이프") != "대기업"
     assert classify_company("(주)농심") == "대기업"
+
+
+def test_expired_interest_jobs_are_purged_but_applied_ones_stay():
+    from jobhelper import db
+
+    db.init_db()
+    for company, status, deadline in [("옛관심", "관심", "2026-10-01"), ("아직관심", "관심", "2026-10-30"),
+                                      ("옛지원", "지원 완료", "2026-10-01"), ("상시", "관심", "")]:
+        db.save_job({"company": company, "position": "생산", "status": status, "deadline": deadline})
+    assert db.purge_expired(TODAY.isoformat()) == ["옛관심"]
+    assert {j["company"] for j in db.load_jobs()} == {"아직관심", "옛지원", "상시"}
