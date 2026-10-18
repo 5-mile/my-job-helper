@@ -8,6 +8,7 @@ from .config import (
     FOREIGN_CORP_KEYWORDS,
     LARGE_CORP_KEYWORDS,
     MID_CORP_KEYWORDS,
+    NOT_LARGE_CORPS,
     WELFARE_PATTERNS,
 )
 
@@ -17,7 +18,7 @@ def classify_company(company: str, position: str = "") -> str:
     haystack = f"{company} {position}"
     lowered = haystack.lower()
 
-    if any(k in company for k in LARGE_CORP_KEYWORDS):
+    if any(k in company for k in LARGE_CORP_KEYWORDS) and not any(k in company for k in NOT_LARGE_CORPS):
         return "대기업"
     if any(k.lower() in lowered for k in FOREIGN_CORP_KEYWORDS):
         return "외국계"

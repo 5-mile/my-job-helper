@@ -79,13 +79,13 @@ def test_big_company_is_requested_without_asking(monkeypatch):
 
     sent = []
     monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: sent.append((text, kb)) or True)
-    big = {**_job(11, "화학 생산직"), "category": "대기업"}
+    big = {**_job(11, "화학 생산직"), "company": "롯데케미칼(주)"}  # 회사명으로 다시 분류된다
     digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: ([*JOBS, big], _Diag()))
 
     saved = {j["company"]: j for j in db.load_jobs()}
-    assert saved["회사11"]["memo"] == digest.REQUEST_TAG and saved["회사11"]["status"] == "지원 예정"
-    assert "대기업" in sent[0][0] and "회사11" in sent[0][0]
-    assert all("회사11" not in t for t, _ in sent[1:])  # 목록·질문에 다시 나오지 않는다
+    assert saved["롯데케미칼(주)"]["memo"] == digest.REQUEST_TAG and saved["롯데케미칼(주)"]["status"] == "지원 예정"
+    assert "대기업" in sent[0][0] and "롯데케미칼" in sent[0][0]
+    assert all("롯데케미칼" not in t for t, _ in sent[1:])  # 목록·질문에 다시 나오지 않는다
 
 
 def test_leftovers_wait_in_pool_for_next_button(monkeypatch):
@@ -141,3 +141,10 @@ def test_telegram_falls_back_to_db_config(monkeypatch):
         conn.execute("CREATE TABLE bot_config (key TEXT PRIMARY KEY, value TEXT)")
         conn.execute("INSERT INTO bot_config VALUES ('bot_token', 'T'), ('chat_id', '42')")
     assert notify.telegram_config() == ("T", "42")
+
+
+def test_lookalike_names_are_not_big_companies():
+    from jobhelper.classify import classify_company
+
+    assert classify_company("(주)삼성테이프") != "대기업"
+    assert classify_company("(주)농심") == "대기업"

@@ -15,6 +15,7 @@ from datetime import date
 from typing import Any
 
 from . import db, settings
+from .classify import classify_company
 from .dates import now_iso
 from .notify import send_telegram
 from .scrapers.saramin import fetch_saramin_jobs_detailed
@@ -202,7 +203,9 @@ ASK_PER_DAY = 3
 
 def auto_request(today: date, db_path: str | None = None) -> list[dict[str, Any]]:
     """아직 안 보낸 대기업 공고를 보관함에 넣고 자소서를 요청한다. 보낸 것으로 표시해 다시 집지 않는다."""
-    picked = [j for j in next_batch(10_000, today, db_path) if j.get("category") == AUTO_CATEGORY][:AUTO_PER_DAY]
+    # 풀에 쌓인 옛 분류가 틀렸을 수 있어 지금 규칙으로 다시 분류한다.
+    picked = [j for j in next_batch(10_000, today, db_path)
+              if classify_company(j.get("company", ""), j.get("position", "")) == AUTO_CATEGORY][:AUTO_PER_DAY]
     if not picked:
         return []
     db.init_db(db_path)
