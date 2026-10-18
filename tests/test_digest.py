@@ -16,6 +16,7 @@ def _fixed_regions(monkeypatch):
     # 기본 지역(경기·충청·경북)이 바뀌어도 아래 기대값이 흔들리지 않게 고정한다.
     monkeypatch.setenv("DIGEST_REGIONS", "음성,진천")
     monkeypatch.setenv("DIGEST_PREFERRED", "없음")
+    monkeypatch.setenv("DIGEST_LETTERS", "1")
 
 
 class _Diag:
@@ -207,3 +208,11 @@ def test_recommend_picks_popular_unseen_and_skips_saved(monkeypatch):
     result = digest.recommend(TODAY)
     assert sent[0].index("회사34") < sent[0].index("회사33") < sent[0].index("회사31")  # 인기순(pop 작은 순)
     assert "회사32" not in sent[0] and result["sent"] and digest.recommend(TODAY)["new"] == 0
+
+
+def test_letters_are_off_by_default(monkeypatch):
+    monkeypatch.delenv("DIGEST_LETTERS")
+    sent = []
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: sent.append(text) or True)
+    digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: ([*JOBS, {**_job(11, "화학 생산직"), "company": "롯데케미칼(주)"}], _Diag()))
+    assert not any("자소서" in t for t in sent)  # 자동 요청 알림도, '쓸까요?' 질문도 없다

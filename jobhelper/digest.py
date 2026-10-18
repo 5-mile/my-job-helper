@@ -359,7 +359,9 @@ def run(
             send_telegram(f"🗑 마감 지난 관심 공고 {len(expired)}건을 보관함에서 지웠습니다: {', '.join(expired[:10])}")
         if today.weekday() == 0:
             send_telegram(build_weekly(today, db_path))
-        auto = auto_request(today, db_path)
+        # 자소서 자동 요청·질문은 PC 예약 작업(Claude 토큰)이 있어야 의미가 있다. 기본은 끔: DIGEST_LETTERS=1 로 켠다.
+        letters = settings.get_bool("DIGEST_LETTERS")
+        auto = auto_request(today, db_path) if letters else []
         if auto:
             send_telegram(build_auto_notice(auto))
     fresh = next_batch(limit, today, db_path)
@@ -373,6 +375,6 @@ def run(
     if send_telegram(result["message"], keyboard(fresh)):
         _mark_sent([j["key"] for j in fresh], db_path)
         result["sent"] = True
-        for j in [j for j in fresh if j.get("category") in ASK_CATEGORIES][:ASK_PER_DAY]:
+        for j in [j for j in fresh if letters and j.get("category") in ASK_CATEGORIES][:ASK_PER_DAY]:
             send_telegram(*build_ask(j))
     return result
