@@ -13,7 +13,10 @@ import postgres from "npm:postgres@3.4.5";
 const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { prepare: false, max: 1 });
 
 const MENU = {
-  keyboard: [[{ text: "📋 공고 더 보기" }, { text: "⏰ 마감 임박" }, { text: "📁 보관함" }]],
+  keyboard: [
+    [{ text: "📋 공고 더 보기" }, { text: "⏰ 마감 임박" }],
+    [{ text: "📁 보관함" }, { text: "⚙️ 조건" }],
+  ],
   resize_keyboard: true,
   is_persistent: true,
 };
@@ -300,6 +303,58 @@ function help(chatId: number) {
   };
 }
 
+// ✅ 지원했어요 — 자소서·즉시지원 메시지 밑 버튼. 메시지는 그대로 두고 상태만 '지원 완료' 로 (지원일 기록).
+async function applied(callbackId: string, id: number) {
+  const rows = await sql`select company from scrapped_jobs where id = ${id}`;
+  if (rows.length === 0) return { method: "answerCallbackQuery", callback_query_id: callbackId, text: "보관함에 없는 공고입니다." };
+  await sql`
+    update scrapped_jobs set status = '지원 완료',
+      applied_at = case when coalesce(applied_at, '') = '' then ${today()} else applied_at end
+    where id = ${id}`;
+  return { method: "answerCallbackQuery", callback_query_id: callbackId, text: `✅ ${rows[0].company} 지원 완료로 기록했습니다` };
+}
+
+// ⚙️ 조건 — 새 공고 요약의 지역·건수. bot_config 에 저장하면 digest.py 가 읽는다.
+// 지역 묶음은 digest.py 의 REGION_GROUPS 와 같은 이름이어야 한다.
+const REGION_GROUPS = ["경기", "충북", "충남·대전·세종", "경북·대구"];
+const LIMITS = [3, 5, 10];
+
+async function settingsView(): Promise<View> {
+  const g = await config("digest_groups");
+  const on = g === undefined ? ["경기", "충북", "충남·대전·세종", "경북·대구"] : g.split(",").filter(Boolean);
+  const limit = Number((await config("digest_limit")) || 5);
+  return {
+    text: [
+      "⚙️ 새 공고 요약 조건 (다음 요약부터 적용)",
+      "",
+      `지역: ${on.join(", ") || "없음 (아무것도 안 옴)"}`,
+      `하루 건수: ${limit}건`,
+      "",
+      "누르면 켜고 끕니다. 검색어는 아직 파일로 바꿔야 합니다.",
+    ].join("\n"),
+    reply_markup: {
+      inline_keyboard: [
+        REGION_GROUPS.map((r, i) => ({ text: `${on.includes(r) ? "✅" : "⬜"} ${r}`, callback_data: `c:g:${i}` })),
+        LIMITS.map((n) => ({ text: `${n === limit ? "●" : ""}${n}건`, callback_data: `c:n:${n}` })),
+      ],
+    },
+  };
+}
+
+async function setSetting(kind: string, value: string): Promise<View> {
+  let key = "digest_limit", val = value;
+  if (kind === "g") {
+    const name = REGION_GROUPS[Number(value)];
+    const g = await config("digest_groups");
+    const on = g === undefined ? [...REGION_GROUPS] : g.split(",").filter(Boolean);
+    key = "digest_groups";
+    val = (on.includes(name) ? on.filter((x) => x !== name) : [...on, name]).join(",");
+  }
+  await sql`insert into bot_config (key, value) values (${key}, ${val})
+            on conflict (key) do update set value = excluded.value`;
+  return settingsView();
+}
+
 async function onButton(cb: { id: string; data?: string; message: { message_id: number } }, chatId: number) {
   const where: Where = { chatId, messageId: cb.message.message_id };
   const [op, a, b, c] = (cb.data || "").split(":");
@@ -309,6 +364,8 @@ async function onButton(cb: { id: string; data?: string; message: { message_id: 
   // m:<분류>:0 은 새 메시지로, p:<분류>:<쪽>(이전·다음)은 같은 메시지를 고친다.
   if (op === "m") return more({ chatId }, a, 0);
   if (op === "p") return more(where, a, Number(b) || 0);
+  if (op === "a") return applied(cb.id, Number(a));
+  if (op === "c") return show(where, await setSetting(a, b));
   if (op === "l" || op === "u") return show(where, await listView(op));
   if (op === "j") return show(where, await jobView(Number(a), b));
   if (op === "t") return show(where, await setStatus(Number(a), Number(b), c));
@@ -337,6 +394,7 @@ Deno.serve(async (req) => {
     const text: string = update.message?.text || "";
     if (text.includes("공고 더 보기")) return json(await more({ chatId }));
     if (text.includes("마감 임박")) return json(show({ chatId }, await listView("u")));
+    if (text.includes("조건")) return json(show({ chatId }, await settingsView()));
     if (text.includes("보관함")) return json(show({ chatId }, await listView("l")));
     return json(help(chatId));
   } catch (e) {

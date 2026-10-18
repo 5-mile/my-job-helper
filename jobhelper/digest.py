@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from . import db, settings
@@ -50,6 +50,30 @@ _WEIGHTS = [
     (re.compile(r"정규직"), 1),
     (re.compile(r"지게차|자재"), 1),
 ]
+
+
+# 텔레그램 ⚙️ 조건 버튼의 지역 묶음 (index.ts 의 REGION_GROUPS 와 같은 이름)
+REGION_GROUPS = {
+    "경기": ["경기"], "충북": ["충북"],
+    "충남·대전·세종": ["충남", "대전", "세종"], "경북·대구": ["경북", "대구"],
+}
+
+
+def _bot_config(key: str, db_path: str | None = None) -> str | None:
+    """텔레그램 ⚙️ 조건 버튼이 bot_config 에 저장한 값. 표가 없거나 값이 없으면 None."""
+    try:
+        with connect(db_path) as conn:
+            row = conn.execute("SELECT value FROM bot_config WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+    except Exception:
+        return None
+
+
+def _regions(db_path: str | None = None) -> list[str]:
+    groups = _bot_config("digest_groups", db_path)
+    if groups is None:
+        return _csv("DIGEST_REGIONS", DEFAULT_REGIONS)
+    return [r for g in groups.split(",") for r in REGION_GROUPS.get(g, [])]
 
 
 def _csv(name: str, default: str) -> list[str]:
@@ -243,6 +267,23 @@ def build_auto_notice(jobs: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def build_weekly(today: date, db_path: str | None = None) -> str:
+    """월요일 아침 지원 현황: 상태별 건수와 7일 안에 마감되는 미지원 공고."""
+    counts = db.status_counts(db_path)
+    summary = " · ".join(f"{k} {v}" for k, v in counts.items() if v) or "보관함이 비어 있습니다"
+    limit = (today + timedelta(days=7)).isoformat()
+    due = sorted(
+        (j for j in db.load_jobs(db_path=db_path)
+         if j["status"] in ("관심", "지원 예정") and today.isoformat() <= (j.get("deadline") or "9") <= limit),
+        key=lambda j: j["deadline"],
+    )
+    lines = ["📊 이번 주 지원 현황", "", summary]
+    if due:
+        lines += ["", "⏰ 7일 안에 마감인데 아직 지원 안 한 공고"]
+        lines += [f"• {j['company']} · ~{j['deadline']} · {j['status']}" for j in due[:10]]
+    return "\n".join(lines)
+
+
 def build_ask(job: dict[str, Any]) -> tuple[str, dict]:
     """중견·외국계 공고는 '자소서 쓸까요?' 를 묻는다. [예] 를 누르면 봇이 보관함에 넣고 자소서를 요청한다."""
     location = (job.get("location") or "").split(",")[0]
@@ -270,7 +311,7 @@ def run(
     fetch=fetch_saramin_jobs_detailed,
 ) -> dict[str, Any]:
     today = today or date.today()
-    limit = limit or int(settings.get("DIGEST_LIMIT") or DEFAULT_LIMIT)
+    limit = limit or int(_bot_config("digest_limit", db_path) or settings.get("DIGEST_LIMIT") or DEFAULT_LIMIT)
     init_digest_pool(db_path)
 
     jobs, diagnostics = fetch(_csv("DIGEST_KEYWORDS", DEFAULT_KEYWORDS), "relation", 2, [])
@@ -285,13 +326,15 @@ def run(
     for j in pop_jobs:
         pop.setdefault(job_key(j), len(pop))
     jobs = [*jobs, *pop_jobs]
-    _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED))], db_path)
+    _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in select(jobs, _regions(db_path), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED))], db_path)
     _refresh_pop(pop, db_path)
     if not dry_run:
         db.init_db(db_path)
         expired = db.purge_expired(today.isoformat(), db_path)
         if expired:
             send_telegram(f"🗑 마감 지난 관심 공고 {len(expired)}건을 보관함에서 지웠습니다: {', '.join(expired[:10])}")
+        if today.weekday() == 0:
+            send_telegram(build_weekly(today, db_path))
         auto = auto_request(today, db_path)
         if auto:
             send_telegram(build_auto_notice(auto))

@@ -17,7 +17,7 @@ python jobctl.py saved --requested
 - 지원 방법이 "사람인 입사지원"(즉시지원)이다.
 - 본문에 별도 자소서 문항·글자 수 제한이 없다.
 
-이때는 마감·필수 조건(`rank.md` 3-1)만 확인하고, 아래 짧은 메시지를 `notify` 로 보낸 뒤 `done-request` 한다 (`save-letter` 는 하지 않는다):
+이때는 마감·필수 조건(`rank.md` 3-1)만 확인하고, 아래 짧은 메시지를 `notify --job-id <id>` 로 보낸 뒤 `done-request` 한다 (`save-letter` 는 하지 않는다):
 
 ```
 📨 <회사> 즉시지원 가능 (이력서 자소서 그대로)
@@ -52,7 +52,7 @@ python jobctl.py done-request --job-id <id>
 
 ## 3. 텔레그램으로 보내기
 
-아래 모양으로 임시 파일에 쓰고 `python jobctl.py notify --file <임시파일>.txt`.
+아래 모양으로 임시 파일에 쓰고 `python jobctl.py notify --file <임시파일>.txt --job-id <id>` (`--job-id` 로 ✅ 지원했어요 버튼이 붙는다).
 
 ```
 ✍️ <회사> 자소서 완성 (깊이: 충분/기본/…)

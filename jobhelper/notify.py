@@ -25,7 +25,7 @@ from .dates import days_left, now_iso, parse_deadline
 log = logging.getLogger(__name__)
 
 # 마감된 공고나 이미 결과가 나온 공고는 알릴 필요가 없다.
-SKIP_STATUSES = {"최종 합격", "불합격"}
+SKIP_STATUSES = {"지원 완료", "서류 합격", "면접 진행", "최종 합격", "불합격"}  # 이미 지원했으면 마감 알림 불필요
 
 
 def init_alert_log(db_path: str | None = None) -> None:

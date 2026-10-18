@@ -171,3 +171,24 @@ def test_pool_keeps_popularity_rank(monkeypatch):
     with connect() as conn:
         pops = {r["job_key"]: json.loads(r["data"]).get("pop") for r in conn.execute("SELECT job_key, data FROM digest_pool WHERE data <> '{}'")}
     assert pops["saramin:1"] == 0 and pops["saramin:2"] == 1  # 지원자 많은순 목록의 등장 순서
+
+
+def test_bot_config_overrides_regions_and_limit():
+    from jobhelper.storage import connect
+
+    assert digest._regions() == ["음성", "진천"]  # 표가 없으면 환경 변수
+    with connect() as conn:
+        conn.execute("CREATE TABLE bot_config (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO bot_config VALUES ('digest_groups', '충북,충남·대전·세종'), ('digest_limit', '3')")
+    assert digest._regions() == ["충북", "충남", "대전", "세종"]
+    assert digest._bot_config("digest_limit") == "3"
+
+
+def test_weekly_summary_lists_unapplied_deadlines():
+    from jobhelper import db
+
+    db.init_db()
+    db.save_job({"company": "곧마감", "position": "생산", "status": "관심", "deadline": "2026-10-10"})
+    db.save_job({"company": "이미지원", "position": "생산", "status": "지원 완료", "deadline": "2026-10-10"})
+    text = digest.build_weekly(TODAY)
+    assert "곧마감" in text and "이미지원" not in text and "지원 완료 1" in text

@@ -147,7 +147,10 @@ def cmd_notify(args) -> int:
             cur = ""
         cur = f"{cur}\n\n{para}" if cur else para
     chunks.append(cur)
-    if not all(notify.send_telegram(c[:4096]) for c in chunks if c):
+    # --job-id: 마지막 조각에 '지원했어요' 버튼을 붙인다 (봇의 a:<id> 가 지원 완료로 기록)
+    kb = {"inline_keyboard": [[{"text": "✅ 지원했어요", "callback_data": f"a:{args.job_id}"}]]} if args.job_id else None
+    last = len(chunks) - 1
+    if not all(notify.send_telegram(c[:4096], kb if i == last else None) for i, c in enumerate(chunks) if c):
         print("텔레그램 발송 실패", file=sys.stderr)
         return 1
     print(f"텔레그램으로 보냈습니다 ({len(chunks)}개 메시지)")
@@ -230,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("notify", help="텔레그램으로 보내기")
     s.add_argument("--file", required=True, help="보낼 UTF-8 텍스트 파일")
+    s.add_argument("--job-id", type=int, help="보관함 id (있으면 ✅ 지원했어요 버튼을 붙임)")
     s.set_defaults(fn=cmd_notify)
 
     s = sub.add_parser("save")
