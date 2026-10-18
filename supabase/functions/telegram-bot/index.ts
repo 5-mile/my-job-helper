@@ -50,8 +50,7 @@ function formatJobs(jobs: Job[], title: string): string {
     );
   });
   lines.push("⭐ 번호를 누르면 보관함에 저장됩니다.");
-  return lines.join("
-");
+  return lines.join("\n");
 }
 
 // digest.py 의 CATEGORY_BUTTONS 와 같은 값. 누르면 그 분류의 인기순 1쪽.
