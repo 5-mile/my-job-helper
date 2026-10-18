@@ -32,7 +32,7 @@ def _job(n, position, location="충북음성군", education="고졸↑", employm
 
 JOBS = [
     _job(1, "이차전지 양극재 생산 오퍼레이터"),
-    _job(2, "화학 생산직", location="충북진천군"),
+    {**_job(2, "화학 생산직", location="충북진천군"), "category": "외국계"},
     _job(3, "생산직 사원", location="경북구미시"),              # 지역 밖
     _job(4, "이차전지 소재 연구원"),                          # 직무 다름
     _job(5, "화학 생산직", education="대졸↑"),                # 4년제 필수
@@ -64,13 +64,28 @@ def test_run_sends_once_and_never_again(monkeypatch):
     assert stars == ["s:saramin:1", "s:saramin:2"]
     assert all(len(c.encode()) <= 64 for c in stars)
 
-    # 이어서 1순위 공고에 '자소서 쓸까요?' 를 예/아니오 버튼과 함께 묻는다.
+    # 중견·외국계 공고에만 '자소서 쓸까요?' 를 예/아니오 버튼과 함께 묻는다 (회사2 = 외국계).
+    assert len(sent) == 2
     ask_text, ask_kb = sent[1]
-    assert "회사1" in ask_text and "자소서 쓸까요" in ask_text
-    assert [b["callback_data"] for b in ask_kb["inline_keyboard"][0]] == ["y:saramin:1", "n:saramin:1"]
+    assert "회사2" in ask_text and "자소서 쓸까요" in ask_text
+    assert [b["callback_data"] for b in ask_kb["inline_keyboard"][0]] == ["y:saramin:2", "n:saramin:2"]
 
     second = digest.run(limit=5, today=TODAY, fetch=fetch)
     assert second["new"] == 0 and len(sent) == 2
+
+
+def test_big_company_is_requested_without_asking(monkeypatch):
+    from jobhelper import db
+
+    sent = []
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: sent.append((text, kb)) or True)
+    big = {**_job(11, "화학 생산직"), "category": "대기업"}
+    digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: ([*JOBS, big], _Diag()))
+
+    saved = {j["company"]: j for j in db.load_jobs()}
+    assert saved["회사11"]["memo"] == digest.REQUEST_TAG and saved["회사11"]["status"] == "지원 예정"
+    assert "대기업" in sent[0][0] and "회사11" in sent[0][0]
+    assert all("회사11" not in t for t, _ in sent[1:])  # 목록·질문에 다시 나오지 않는다
 
 
 def test_leftovers_wait_in_pool_for_next_button(monkeypatch):

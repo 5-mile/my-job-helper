@@ -14,7 +14,7 @@ import re
 from datetime import date
 from typing import Any
 
-from . import settings
+from . import db, settings
 from .dates import now_iso
 from .notify import send_telegram
 from .scrapers.saramin import fetch_saramin_jobs_detailed
@@ -193,11 +193,38 @@ def build_message(jobs: list[dict[str, Any]], title: str) -> str:
     return "\n".join(lines)
 
 
+REQUEST_TAG = "[자소서 요청]"  # PC 예약 작업(/auto-apply)이 이 표시가 붙은 공고의 자소서를 쓴다
+AUTO_CATEGORY = "대기업"  # 묻지 않고 바로 자소서를 쓴다
+ASK_CATEGORIES = ("중견기업", "외국계")  # [예]/[아니오] 로 묻는다
+AUTO_PER_DAY = 2  # ponytail: 기업 분류가 회사명 휴리스틱이라 하루 상한으로 오분류 피해를 묶는다
+ASK_PER_DAY = 3
+
+
+def auto_request(today: date, db_path: str | None = None) -> list[dict[str, Any]]:
+    """아직 안 보낸 대기업 공고를 보관함에 넣고 자소서를 요청한다. 보낸 것으로 표시해 다시 집지 않는다."""
+    picked = [j for j in next_batch(10_000, today, db_path) if j.get("category") == AUTO_CATEGORY][:AUTO_PER_DAY]
+    if not picked:
+        return []
+    db.init_db(db_path)
+    for j in picked:
+        db.save_job({**j, "source": "텔레그램(대기업 자동)", "status": "지원 예정", "memo": REQUEST_TAG}, db_path)
+    _mark_sent([j["key"] for j in picked], db_path)
+    return picked
+
+
+def build_auto_notice(jobs: list[dict[str, Any]]) -> str:
+    lines = [f"🏢 대기업 생산 공고 {len(jobs)}건, 자소서를 바로 씁니다", ""]
+    for j in jobs:
+        lines += [f"• {j.get('company')} · 마감 {j.get('deadline') or '상세 확인'}", f"  {j.get('position')}", f"  {j.get('link')}", ""]
+    lines.append("PC가 켜져 있으면 1시간 안에 완성본과 지원 링크를 보내드립니다. 원치 않으면 📁 보관함에서 요청을 취소하세요.")
+    return "\n".join(lines)
+
+
 def build_ask(job: dict[str, Any]) -> tuple[str, dict]:
-    """1순위 공고에 '자소서 쓸까요?' 를 묻는다. [예] 를 누르면 봇이 보관함에 넣고 자소서를 요청한다."""
+    """중견·외국계 공고는 '자소서 쓸까요?' 를 묻는다. [예] 를 누르면 봇이 보관함에 넣고 자소서를 요청한다."""
     location = (job.get("location") or "").split(",")[0]
     text = "\n".join([
-        "✍️ 오늘의 1순위 공고",
+        f"✍️ {job.get('category')} 공고",
         "",
         f"{job.get('company')} · {location}",
         f"{job.get('position')}",
@@ -229,6 +256,10 @@ def run(
 
     # ponytail: 풀은 지우지 않고 쌓인다 (하루 수십 건, 행당 수백 바이트). 커지면 오래된 sent 행 정리.
     _add_to_pool(select(jobs, _csv("DIGEST_REGIONS", DEFAULT_REGIONS), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED)), db_path)
+    if not dry_run:
+        auto = auto_request(today, db_path)
+        if auto:
+            send_telegram(build_auto_notice(auto))
     fresh = next_batch(limit, today, db_path)
     result: dict[str, Any] = {"collected": len(jobs), "new": len(fresh), "sent": False}
     if not fresh:
@@ -240,5 +271,6 @@ def run(
     if send_telegram(result["message"], keyboard(fresh)):
         _mark_sent([j["key"] for j in fresh], db_path)
         result["sent"] = True
-        send_telegram(*build_ask(fresh[0]))  # 점수순이라 첫 번째가 1순위
+        for j in [j for j in fresh if j.get("category") in ASK_CATEGORIES][:ASK_PER_DAY]:
+            send_telegram(*build_ask(j))
     return result
