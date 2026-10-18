@@ -1,0 +1,25 @@
+name: 오후 추천 공고
+
+# 오후 3시(한국) — 아침 목록에 안 나간 후보 중 인기순 3건을 텔레그램으로 보낸다.
+# 수집은 하지 않고 DB 에 쌓아 둔 후보만 쓴다.
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC = 15:00 KST
+  workflow_dispatch:
+
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 오후 추천
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python digest.py --recommend

@@ -267,6 +267,30 @@ def build_auto_notice(jobs: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+RECOMMEND_LIMIT = 3
+
+
+def recommend(today: date, limit: int = RECOMMEND_LIMIT, dry_run: bool = False, db_path: str | None = None) -> dict[str, Any]:
+    """오후 추천: 아침 목록에 안 나간 후보 중 인기순(지원자 많은순) 상위. 이미 보관함에 있는 건 뺀다.
+
+    ponytail: 수집 없이 풀만 쓴다. 본문을 읽고 고르는 추천이 필요하면 PC 예약 작업(Claude)으로 옮긴다.
+    """
+    init_digest_pool(db_path)
+    db.init_db(db_path)
+    saved = db.saved_keys(db_path)
+    rest = [j for j in next_batch(10_000, today, db_path) if f"{j.get('company')}::{j.get('position')}" not in saved]
+    rest.sort(key=lambda j: (j["pop"] if isinstance(j.get("pop"), int) else 10**6))  # 안정 정렬: 같으면 점수순 유지
+    picked = rest[:limit]
+    result: dict[str, Any] = {"new": len(picked), "sent": False}
+    if not picked:
+        return result
+    result["message"] = build_message(picked, f"오후 추천 ({today.month}/{today.day})")
+    if not dry_run and send_telegram(result["message"], keyboard(picked)):
+        _mark_sent([j["key"] for j in picked], db_path)
+        result["sent"] = True
+    return result
+
+
 def build_weekly(today: date, db_path: str | None = None) -> str:
     """월요일 아침 지원 현황: 상태별 건수와 7일 안에 마감되는 미지원 공고."""
     counts = db.status_counts(db_path)

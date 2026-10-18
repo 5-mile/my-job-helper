@@ -192,3 +192,18 @@ def test_weekly_summary_lists_unapplied_deadlines():
     db.save_job({"company": "이미지원", "position": "생산", "status": "지원 완료", "deadline": "2026-10-10"})
     text = digest.build_weekly(TODAY)
     assert "곧마감" in text and "이미지원" not in text and "지원 완료 1" in text
+
+
+def test_recommend_picks_popular_unseen_and_skips_saved(monkeypatch):
+    from jobhelper import db
+
+    sent = []
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: sent.append(text) or True)
+    pool = [{**_job(n, "화학 생산직"), "pop": p} for n, p in [(31, 5), (32, 1), (33, 3), (34, 2)]]
+    digest.init_digest_pool()
+    digest._add_to_pool([{**j, "key": digest.job_key(j), "score": 4} for j in pool])
+    db.init_db()
+    db.save_job({"company": "회사32", "position": "화학 생산직"})  # 이미 보관함에 있음
+    result = digest.recommend(TODAY)
+    assert sent[0].index("회사34") < sent[0].index("회사33") < sent[0].index("회사31")  # 인기순(pop 작은 순)
+    assert "회사32" not in sent[0] and result["sent"] and digest.recommend(TODAY)["new"] == 0

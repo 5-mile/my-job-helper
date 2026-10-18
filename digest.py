@@ -3,6 +3,7 @@
     python digest.py              # 새 공고 상위 5건 발송
     python digest.py --limit 10   # 10건
     python digest.py --dry-run    # 보내지 않고 내용만 출력
+    python digest.py --recommend  # 오후 추천 3건 (수집 없이 쌓아 둔 후보에서)
 
 지역과 검색어는 .env 의 DIGEST_REGIONS, DIGEST_KEYWORDS 로 바꿀 수 있다 (쉼표 구분).
 """
@@ -14,7 +15,9 @@ import logging
 import sys
 
 from jobhelper import console
-from jobhelper.digest import run
+from datetime import date
+
+from jobhelper.digest import recommend, run
 from jobhelper.notify import telegram_config
 
 console.setup()
@@ -24,6 +27,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="새 공고 요약 발송")
     parser.add_argument("--limit", type=int, help="보낼 공고 수 (기본 5)")
     parser.add_argument("--dry-run", action="store_true", help="발송하지 않고 내용만 출력")
+    parser.add_argument("--recommend", action="store_true", help="오후 추천: 인기순 상위 3건")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -31,6 +35,11 @@ def main() -> int:
         # 텔레그램을 안 쓰는 설정이면 실패가 아니다 (매일 빨간 X 가 뜨지 않게).
         print("텔레그램 설정이 없어 건너뜁니다 (.env 또는 python telegram_bot.py setup).")
         return 0
+
+    if args.recommend:
+        result = recommend(date.today(), dry_run=args.dry_run)
+        print(result.get("message") or "추천할 새 공고가 없습니다.")
+        return 0 if result["sent"] or args.dry_run or not result["new"] else 1
 
     result = run(limit=args.limit, dry_run=args.dry_run)
     print(f"수집 {result['collected']}건 → 새로 보낼 공고 {result['new']}건")
