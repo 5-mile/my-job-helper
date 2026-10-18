@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python jobctl.py:*)",
+      "PowerShell(python jobctl.py:*)"
+    ]
+  }
+}
