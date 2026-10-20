@@ -216,3 +216,9 @@ def test_letters_are_off_by_default(monkeypatch):
     monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: sent.append(text) or True)
     digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: ([*JOBS, {**_job(11, "화학 생산직"), "company": "롯데케미칼(주)"}], _Diag()))
     assert not any("자소서" in t for t in sent)  # 자동 요청 알림도, '쓸까요?' 질문도 없다
+
+
+def test_keyboard_wraps_star_buttons_in_rows_of_five():
+    jobs = [{"key": f"saramin:{n}"} for n in range(1, 11)]
+    rows = digest.keyboard(jobs)["inline_keyboard"]
+    assert [len(r) for r in rows] == [5, 5, 3]  # ⭐ 5 + ⭐ 5 + 분류 3

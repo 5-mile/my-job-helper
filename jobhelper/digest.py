@@ -28,8 +28,8 @@ DEFAULT_REGIONS = "경기,충북,충남,대전,세종,경북,대구"
 # 범위 안에서도 먼저 보고 싶은 곳. 점수를 올려 위로 보낸다.
 DEFAULT_PREFERRED = "음성,진천,충주,증평,괴산,청주,이천,안성"
 PREFERRED_BONUS = 2
-DEFAULT_KEYWORDS = "음성 생산,진천 생산,충주 생산,이차전지,화학 생산,설비OP,생산직"
-DEFAULT_LIMIT = 5
+DEFAULT_KEYWORDS = "음성 생산,진천 생산,충주 생산,이차전지,화학 생산,설비OP,생산직,식품 생산,제조 생산직,반도체 생산,자동차부품 생산,물류 지게차"
+DEFAULT_LIMIT = 10
 
 # 초대졸이라 4년제 이상 필수는 지원 자체가 안 된다.
 _EDU_BLOCK = re.compile(r"^대졸|석사|박사")
@@ -216,7 +216,8 @@ def keyboard(jobs: list[dict[str, Any]]) -> dict:
     """공고별 ⭐ 버튼(보관함 저장) + 분류별 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
     return {
         "inline_keyboard": [
-            [{"text": f"⭐{n}", "callback_data": f"s:{j['key']}"} for n, j in enumerate(jobs, 1)],
+            *([{"text": f"⭐{n}", "callback_data": f"s:{j['key']}"} for n, j in enumerate(jobs, 1)][i:i + 5]
+              for i in range(0, len(jobs), 5)),  # 한 줄 8개 제한이라 5개씩
             CATEGORY_BUTTONS,
         ]
     }
