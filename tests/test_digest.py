@@ -222,3 +222,17 @@ def test_keyboard_wraps_star_buttons_in_rows_of_five():
     jobs = [{"key": f"saramin:{n}"} for n in range(1, 11)]
     rows = digest.keyboard(jobs)["inline_keyboard"]
     assert [len(r) for r in rows] == [5, 5, 3]  # ⭐ 5 + ⭐ 5 + 분류 3
+
+
+def test_big_company_is_picked_anywhere_but_others_stay_regional():
+    far = {**_job(41, "화학 생산직", location="경남창원시"), "company": "롯데케미칼(주)"}
+    far_small = {**_job(42, "화학 생산직", location="경남창원시"), "company": "작은회사"}
+    picked = digest.select([far, far_small], ["음성", "진천"], TODAY)
+    assert [j["company"] for j in picked] == ["롯데케미칼(주)"]
+
+
+def test_lookalike_hyundai_names_are_not_big():
+    from jobhelper.classify import classify_company
+
+    assert classify_company("현대아이에이치엘(주)") != "대기업" and classify_company("(주)현대포리텍") != "대기업"
+    assert classify_company("현대트랜시스(주)") == "대기업"

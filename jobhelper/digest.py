@@ -28,7 +28,7 @@ DEFAULT_REGIONS = "경기,충북,충남,대전,세종,경북,대구"
 # 범위 안에서도 먼저 보고 싶은 곳. 점수를 올려 위로 보낸다.
 DEFAULT_PREFERRED = "음성,진천,충주,증평,괴산,청주,이천,안성"
 PREFERRED_BONUS = 2
-DEFAULT_KEYWORDS = "음성 생산,진천 생산,충주 생산,이차전지,화학 생산,설비OP,생산직,식품 생산,제조 생산직,반도체 생산,자동차부품 생산,물류 지게차"
+DEFAULT_KEYWORDS = "대기업 생산직,음성 생산,진천 생산,충주 생산,이차전지,화학 생산,설비OP,생산직,식품 생산,제조 생산직,반도체 생산,자동차부품 생산,물류 지게차"
 DEFAULT_LIMIT = 10
 
 # 초대졸이라 4년제 이상 필수는 지원 자체가 안 된다.
@@ -109,11 +109,13 @@ def select(
         seen.add(key)
         position = job.get("position") or ""
         location = job.get("location") or ""
-        if not any(r in location for r in regions):
+        # 대기업은 지역 상관없이 알린다 (근무지가 멀면 이사 계획으로 지원). 나머지 조건은 똑같이 적용.
+        big = classify_company(job.get("company") or "", position) == AUTO_CATEGORY
+        if not big and not any(r in location for r in regions):
             continue
         # "충북전체,진천군,청주시,…" 처럼 지역을 잔뜩 걸어둔 건 대개 알선업체 공고고,
         # 실제 근무지가 딴 곳인 경우가 많다 (예: 천안 공장을 충북 전역에 노출).
-        if "전체" in location or location.count(",") >= 3:
+        if not big and ("전체" in location or location.count(",") >= 3):
             continue
         if _EDU_BLOCK.search(job.get("education") or ""):
             continue
@@ -176,15 +178,16 @@ def _add_to_pool(jobs: list[dict[str, Any]], db_path: str | None = None) -> None
 
 
 def _refresh_pop(pop: dict[str, int], db_path: str | None = None) -> None:
-    """이미 풀에 있는 공고도 오늘 기준 인기 순위로 갱신한다."""
-    if not pop:
-        return
+    """이미 풀에 있는 공고의 인기 순위와 기업 분류를 오늘 기준으로 갱신한다 (분류 규칙이 바뀌면 옛 분류가 남지 않게)."""
     with connect(db_path) as conn:
-        for key, data in [(r["job_key"], r["data"]) for r in conn.execute("SELECT job_key, data FROM digest_pool WHERE data <> '{}'").fetchall()]:
+        rows = [(r["job_key"], r["data"]) for r in conn.execute("SELECT job_key, data FROM digest_pool WHERE data <> '{}'").fetchall()]
+        for key, data in rows:
             d = json.loads(data)
-            if d.get("pop") != pop.get(key, ""):
-                conn.execute("UPDATE digest_pool SET data = ? WHERE job_key = ?",
-                             (json.dumps({**d, "pop": pop.get(key, "")}, ensure_ascii=False), key))
+            new = {**d, "category": classify_company(d.get("company", ""), d.get("position", ""))}
+            if pop:
+                new["pop"] = pop.get(key, "")
+            if new != d:
+                conn.execute("UPDATE digest_pool SET data = ? WHERE job_key = ?", (json.dumps(new, ensure_ascii=False), key))
 
 
 def next_batch(limit: int, today: date, db_path: str | None = None) -> list[dict[str, Any]]:
