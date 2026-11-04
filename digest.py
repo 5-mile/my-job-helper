@@ -19,6 +19,7 @@ from datetime import date
 
 from jobhelper.digest import recommend, run
 from jobhelper.notify import telegram_config
+from jobhelper.scrapers.saramin import fetch_detail_text
 
 console.setup()
 
@@ -41,7 +42,7 @@ def main() -> int:
         print(result.get("message") or "추천할 새 공고가 없습니다.")
         return 0 if result["sent"] or args.dry_run or not result["new"] else 1
 
-    result = run(limit=args.limit, dry_run=args.dry_run)
+    result = run(limit=args.limit, dry_run=args.dry_run, detail=fetch_detail_text)
     print(f"수집 {result['collected']}건 → 새로 보낼 공고 {result['new']}건")
     if not result["new"]:
         return 0

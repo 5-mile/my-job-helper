@@ -45,15 +45,45 @@ function formatJobs(jobs: Job[], title: string): string {
   jobs.forEach((j, i) => {
     const cond = [j.career, j.education, j.employment].filter(Boolean).join(" · ");
     lines.push(
-      `${i + 1}. ${j.company} · ${(j.location || "").split(",")[0]}`,
+      `${i + 1}. ${j.tags ? `${j.tags} ` : ""}${j.company} · ${(j.location || "").split(",")[0]}`,
       `   ${j.position}`,
       `   ${cond} · 마감 ${j.deadline || "상시/상세 확인"}`,
       `   ${j.link}`,
       "",
     );
   });
-  lines.push("⭐ 번호를 누르면 보관함에 저장됩니다.");
+  if (jobs.some((j) => j.tags)) lines.push("💼 경력 우대 · 🏠 기숙사 · 🚌 통근버스");
+  lines.push("⭐ 번호: 보관함에 저장 · 🚫 번호: 그 회사 공고 그만 보기");
   return lines.join("\n");
+}
+
+// 🚫 으로 숨긴 회사 (bot_config 'blocked', JSON 목록). digest.py 의 blocked() 가 같은 값을 읽는다.
+async function blockedList(): Promise<string[]> {
+  try {
+    return JSON.parse((await config("blocked")) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+async function setBlocked(list: string[]) {
+  await sql`insert into bot_config (key, value) values ('blocked', ${JSON.stringify(list)})
+            on conflict (key) do update set value = excluded.value`;
+}
+
+// 🚫 — 그 회사 공고를 앞으로 보내지 않는다. 메시지는 그대로 둔다.
+async function block(callbackId: string, key: string) {
+  const rows = await sql`select data from digest_pool where job_key = ${key}`;
+  if (rows.length === 0) {
+    return { method: "answerCallbackQuery", callback_query_id: callbackId, text: "공고 정보를 찾지 못했습니다." };
+  }
+  const company: string = JSON.parse(rows[0].data).company;
+  const list = await blockedList();
+  if (!list.includes(company)) await setBlocked([...list, company]);
+  return {
+    method: "answerCallbackQuery", callback_query_id: callbackId,
+    text: `🚫 ${company} 공고는 더 보내지 않습니다 (⚙️ 조건에서 해제)`,
+  };
 }
 
 // digest.py 의 CATEGORY_BUTTONS 와 같은 값. 누르면 그 분류의 인기순 1쪽.
@@ -70,6 +100,7 @@ function jobButtons(keys: string[], category: string, page: number, pages: numbe
   return {
     inline_keyboard: [
       keys.map((k, i) => ({ text: `⭐${i + 1}`, callback_data: `s:${k}` })),
+      keys.map((k, i) => ({ text: `🚫${i + 1}`, callback_data: `b:${k}` })),
       ...(nav.length ? [nav] : []),
       CATEGORY_ROW,
     ],
@@ -80,7 +111,9 @@ function jobButtons(keys: string[], category: string, page: number, pages: numbe
 // where.messageId 가 있으면 그 메시지를 고쳐(이전·다음), 없으면 새로 보낸다.
 async function more(where: Where, category = "", page = 0) {
   const filter = category ? sql`and data::json->>'category' = ${category}` : sql``;
-  const live = sql`data <> '{}' and (deadline = '' or deadline >= ${today()}) ${filter}`;
+  const hidden = await blockedList();
+  const notHidden = hidden.length ? sql`and data::json->>'company' not in ${sql(hidden)}` : sql``;
+  const live = sql`data <> '{}' and (deadline = '' or deadline >= ${today()}) ${filter} ${notHidden}`;
   const [{ n }] = await sql`select count(*)::int as n from digest_pool where ${live}`;
   if (n === 0) {
     return {
@@ -322,13 +355,15 @@ const LIMITS = [3, 5, 10];
 async function settingsView(): Promise<View> {
   const g = await config("digest_groups");
   const on = g === undefined ? ["경기", "충북", "충남·대전·세종", "경북·대구"] : g.split(",").filter(Boolean);
-  const limit = Number((await config("digest_limit")) || 5);
+  const limit = Number((await config("digest_limit")) || 10);
+  const hidden = await blockedList();
   return {
     text: [
       "⚙️ 새 공고 요약 조건 (다음 요약부터 적용)",
       "",
-      `지역: ${on.join(", ") || "없음 (아무것도 안 옴)"}`,
+      `지역: ${on.join(", ") || "없음 (아무것도 안 옴)"} (대기업은 지역 무관)`,
       `하루 건수: ${limit}건`,
+      `🚫 숨긴 회사: ${hidden.length ? hidden.join(", ") : "없음"}`,
       "",
       "누르면 켜고 끕니다. 검색어는 아직 파일로 바꿔야 합니다.",
     ].join("\n"),
@@ -336,12 +371,17 @@ async function settingsView(): Promise<View> {
       inline_keyboard: [
         REGION_GROUPS.map((r, i) => ({ text: `${on.includes(r) ? "✅" : "⬜"} ${r}`, callback_data: `c:g:${i}` })),
         LIMITS.map((n) => ({ text: `${n === limit ? "●" : ""}${n}건`, callback_data: `c:n:${n}` })),
+        ...(hidden.length ? [[{ text: "🚫 숨긴 회사 모두 해제", callback_data: "c:b:0" }]] : []),
       ],
     },
   };
 }
 
 async function setSetting(kind: string, value: string): Promise<View> {
+  if (kind === "b") {
+    await setBlocked([]);
+    return settingsView();
+  }
   let key = "digest_limit", val = value;
   if (kind === "g") {
     const name = REGION_GROUPS[Number(value)];
@@ -360,6 +400,7 @@ async function onButton(cb: { id: string; data?: string; message: { message_id: 
   const [op, a, b, c] = (cb.data || "").split(":");
   // s:<job_key> 의 키에는 ':' 가 들어 있다 (saramin:123)
   if (op === "s") return save(cb.id, (cb.data || "").slice(2));
+  if (op === "b") return block(cb.id, (cb.data || "").slice(2));
   if (op === "y" || op === "n") return askAnswer(where, (cb.data || "").slice(2), op === "y");
   // m:<분류>:0 은 새 메시지로, p:<분류>:<쪽>(이전·다음)은 같은 메시지를 고친다.
   if (op === "m") return more({ chatId }, a, 0);

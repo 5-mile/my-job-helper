@@ -41,6 +41,12 @@ _OFF = re.compile(
 )
 _ON = re.compile(r"생산|OP|오퍼레이터|Operator|운전원|설비|공정|제조|화학|이차전지|배터리|보전|정비|유틸|품질|지게차|자재")
 _TEMP = re.compile(r"아르바이트|단기")
+# 공고 표시용 표: 💼 경력 쳐줄 만한 곳, 🏠 기숙사, 🚌 통근버스 (제목·분야·본문에서 찾는다)
+_CAREER = re.compile(r"경력\s*우대|경력자\s*우대|유경험자|경험자\s*우대|관련\s*(경력|경험)")
+_DORM = re.compile(r"기숙사|사택")
+_BUS = re.compile(r"통근\s*버스|셔틀|통근\s*차량")
+TAG_LEGEND = "💼 경력 우대 · 🏠 기숙사 · 🚌 통근버스"
+DETAIL_PER_RUN = 80  # ponytail: 새 후보만 본문을 읽는다. 하루 수십 건이라 상한만 둔다.
 # 경력(리튬 정제·화학 공정·설비 보전·지게차)과 가까울수록 높게.
 _WEIGHTS = [
     (re.compile(r"이차전지|2차전지|배터리|양극|음극|전해|리튬"), 5),
@@ -91,6 +97,25 @@ def short_link(job: dict[str, Any]) -> str:
     return f"https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx={m.group(1)}" if m else (job.get("link") or "")
 
 
+def tags(job: dict[str, Any], body: str = "") -> str:
+    text = f"{job.get('position') or ''} {job.get('sector') or ''} {body}"
+    career = job.get("career") or ""
+    marks = [
+        ("💼", _CAREER.search(text) or ("경력" in career and "무관" not in career)),
+        ("🏠", _DORM.search(text)),
+        ("🚌", _BUS.search(text)),
+    ]
+    return "".join(m for m, hit in marks if hit)
+
+
+def blocked(db_path: str | None = None) -> set[str]:
+    """텔레그램 🚫 버튼으로 숨긴 회사 (bot_config 'blocked' 에 JSON 목록, 봇 index.ts 가 쓴다)."""
+    try:
+        return set(json.loads(_bot_config("blocked", db_path) or "[]"))
+    except ValueError:
+        return set()
+
+
 def score(job: dict[str, Any]) -> int:
     text = f"{job.get('position') or ''} {job.get('sector') or ''} {job.get('employment') or ''}"
     s = sum(w for pattern, w in _WEIGHTS if pattern.search(text))
@@ -135,7 +160,7 @@ def select(
 # 텔레그램 봇(supabase/functions/telegram-bot)이 버튼 처리에 쓰는 필드. 봇은 이 JSON만 본다.
 POOL_FIELDS = (
     "company", "position", "location", "career", "education", "employment",
-    "deadline", "date", "category", "sector", "pop",
+    "deadline", "date", "category", "sector", "pop", "tags",
 )
 
 
@@ -191,14 +216,16 @@ def _refresh_pop(pop: dict[str, int], db_path: str | None = None) -> None:
 
 
 def next_batch(limit: int, today: date, db_path: str | None = None) -> list[dict[str, Any]]:
-    """아직 안 보낸 후보 중 점수 높은 순. 마감 지난 건 뺀다."""
+    """아직 안 보낸 후보 중 점수 높은 순. 마감 지난 건과 🚫 숨긴 회사는 뺀다."""
     with connect(db_path) as conn:
         rows = conn.execute(
             "SELECT job_key, data FROM digest_pool WHERE sent_at IS NULL "
-            "AND (deadline = '' OR deadline >= ?) ORDER BY score DESC, collected_at DESC LIMIT ?",
-            (today.isoformat(), limit),
+            "AND (deadline = '' OR deadline >= ?) ORDER BY score DESC, collected_at DESC",
+            (today.isoformat(),),
         ).fetchall()
-    return [{**json.loads(r["data"]), "key": r["job_key"]} for r in rows]
+    hidden = blocked(db_path)
+    jobs = [{**json.loads(r["data"]), "key": r["job_key"]} for r in rows]
+    return [j for j in jobs if j.get("company") not in hidden][:limit]
 
 
 def _mark_sent(keys: list[str], db_path: str | None = None) -> None:
@@ -216,11 +243,15 @@ CATEGORY_BUTTONS = [
 
 
 def keyboard(jobs: list[dict[str, Any]]) -> dict:
-    """공고별 ⭐ 버튼(보관함 저장) + 분류별 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
+    """공고별 ⭐(보관함 저장)·🚫(이 회사 그만 보기) 버튼 + 분류별 다음 5건. callback_data 는 64바이트 제한이라 키만 싣는다."""
+    def rows(mark: str, op: str):
+        buttons = [{"text": f"{mark}{n}", "callback_data": f"{op}:{j['key']}"} for n, j in enumerate(jobs, 1)]
+        return [buttons[i:i + 5] for i in range(0, len(buttons), 5)]  # 한 줄 8개 제한이라 5개씩
+
     return {
         "inline_keyboard": [
-            *([{"text": f"⭐{n}", "callback_data": f"s:{j['key']}"} for n, j in enumerate(jobs, 1)][i:i + 5]
-              for i in range(0, len(jobs), 5)),  # 한 줄 8개 제한이라 5개씩
+            *rows("⭐", "s"),
+            *rows("🚫", "b"),
             CATEGORY_BUTTONS,
         ]
     }
@@ -232,13 +263,15 @@ def build_message(jobs: list[dict[str, Any]], title: str) -> str:
         location = (j.get("location") or "").split(",")[0]
         cond = " · ".join(x for x in (j.get("career"), j.get("education"), j.get("employment")) if x)
         lines += [
-            f"{n}. {j.get('company')} · {location}",
+            f"{n}. {j.get('tags') or ''}{' ' if j.get('tags') else ''}{j.get('company')} · {location}",
             f"   {j.get('position')}",
             f"   {cond} · 마감 {j.get('deadline') or '상시/상세 확인'}",
             f"   {j.get('link') or short_link(j)}",
             "",
         ]
-    lines.append("⭐ 번호를 누르면 보관함에 저장됩니다.")
+    if any(j.get("tags") for j in jobs):
+        lines.append(TAG_LEGEND)
+    lines.append("⭐ 번호: 보관함에 저장 · 🚫 번호: 그 회사 공고 그만 보기")
     return "\n".join(lines)
 
 
@@ -337,7 +370,9 @@ def run(
     today: date | None = None,
     db_path: str | None = None,
     fetch=fetch_saramin_jobs_detailed,
+    detail=None,
 ) -> dict[str, Any]:
+    """detail: 공고 본문을 읽는 함수 (digest.py 는 fetch_detail_text). 없으면 제목·분야로만 표를 붙인다."""
     today = today or date.today()
     limit = limit or int(_bot_config("digest_limit", db_path) or settings.get("DIGEST_LIMIT") or DEFAULT_LIMIT)
     init_digest_pool(db_path)
@@ -354,7 +389,13 @@ def run(
     for j in pop_jobs:
         pop.setdefault(job_key(j), len(pop))
     jobs = [*jobs, *pop_jobs]
-    _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in select(jobs, _regions(db_path), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED))], db_path)
+    picked = select(jobs, _regions(db_path), today, _csv("DIGEST_PREFERRED", DEFAULT_PREFERRED))
+    with connect(db_path) as conn:
+        pooled = {r["job_key"] for r in conn.execute("SELECT job_key FROM digest_pool").fetchall()}
+    fresh_picked = [j for j in picked if j["key"] not in pooled]
+    for n, j in enumerate(fresh_picked):
+        j["tags"] = tags(j, detail(j.get("link") or "") if detail and n < DETAIL_PER_RUN else "")
+    _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in fresh_picked], db_path)
     _refresh_pop(pop, db_path)
     if not dry_run:
         db.init_db(db_path)

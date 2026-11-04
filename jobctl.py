@@ -30,7 +30,7 @@ from bs4 import BeautifulSoup
 
 from jobhelper import ai, console, db, lettercheck, notify, profile as profile_mod
 from jobhelper.config import REQUEST_TIMEOUT, SARAMIN_ALL_SORTS, USER_AGENT
-from jobhelper.scrapers.saramin import fetch_saramin_jobs_detailed
+from jobhelper.scrapers.saramin import DETAIL_URL, fetch_saramin_jobs_detailed
 
 console.setup()
 
@@ -84,8 +84,6 @@ def cmd_search(args) -> int:
     return 0
 
 
-# 공고 페이지 본문은 iframe(view-detail)에 따로 있다. 바깥 페이지는 메뉴뿐이다.
-DETAIL_URL = "https://www.saramin.co.kr/zf_user/jobs/relay/view-detail?rec_idx={}"
 DETAIL_MAX_CHARS = 6000
 VIEW_URL = "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx={}"
 

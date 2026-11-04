@@ -38,6 +38,22 @@ DATE_SELECTORS = [".area_job .date", ".job_date .date", ".date"]
 
 _REC_IDX = re.compile(r"rec_idx=(\d+)")
 
+# 공고 본문은 iframe(view-detail)에 따로 있다. 바깥 페이지는 메뉴뿐이다.
+DETAIL_URL = "https://www.saramin.co.kr/zf_user/jobs/relay/view-detail?rec_idx={}"
+
+
+def fetch_detail_text(link: str) -> str:
+    """공고 본문 글자. 실패하거나 사람인 공고가 아니면 빈 문자열 (통이미지 공고도 거의 빈 값)."""
+    m = _REC_IDX.search(link or "")
+    if not m:
+        return ""
+    try:
+        resp = requests.get(DETAIL_URL.format(m.group(1)), headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return ""
+    return " ".join(BeautifulSoup(resp.text, "html.parser").get_text(" ").split())
+
 
 @dataclass
 class FetchDiagnostics:

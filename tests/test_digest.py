@@ -221,7 +221,8 @@ def test_letters_are_off_by_default(monkeypatch):
 def test_keyboard_wraps_star_buttons_in_rows_of_five():
     jobs = [{"key": f"saramin:{n}"} for n in range(1, 11)]
     rows = digest.keyboard(jobs)["inline_keyboard"]
-    assert [len(r) for r in rows] == [5, 5, 3]  # ⭐ 5 + ⭐ 5 + 분류 3
+    assert [len(r) for r in rows] == [5, 5, 5, 5, 3]  # ⭐ 5·5 + 🚫 5·5 + 분류 3
+    assert rows[2][0]["callback_data"] == "b:saramin:1"
 
 
 def test_big_company_is_picked_anywhere_but_others_stay_regional():
@@ -236,3 +237,33 @@ def test_lookalike_hyundai_names_are_not_big():
 
     assert classify_company("현대아이에이치엘(주)") != "대기업" and classify_company("(주)현대포리텍") != "대기업"
     assert classify_company("현대트랜시스(주)") == "대기업"
+
+
+def test_tags_mark_career_dorm_bus_from_title_and_body():
+    job = {**_job(1, "화학 생산직"), "career": "신입·경력"}
+    assert digest.tags(job, "기숙사 제공, 통근버스 운행") == "💼🏠🚌"
+    assert digest.tags({**_job(2, "생산직"), "career": "경력무관"}) == ""
+    assert digest.tags(_job(3, "생산직"), "동종업계 유경험자 우대") == "💼"
+
+
+def test_new_pool_rows_get_tags_from_body_once(monkeypatch):
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: True)
+    calls = []
+    detail = lambda link: calls.append(link) or "기숙사 제공"
+    fetch = lambda *a, **k: (JOBS, _Diag())
+    result = digest.run(limit=5, today=TODAY, fetch=fetch, detail=detail, dry_run=True)
+    assert result["new"] and all("🏠" in line for line in result["message"].splitlines() if line[:2] in ("1.", "2."))
+    n = len(calls)
+    digest.run(limit=5, today=TODAY, fetch=fetch, detail=detail, dry_run=True)
+    assert len(calls) == n  # 이미 풀에 있는 공고는 본문을 다시 읽지 않는다
+
+
+def test_blocked_company_is_never_sent(monkeypatch):
+    from jobhelper.storage import connect
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: True)
+    digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: (JOBS, _Diag()), dry_run=True)
+    first = digest.next_batch(5, TODAY)[0]["company"]
+    with connect() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS bot_config (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO bot_config (key, value) VALUES ('blocked', ?)", (f'["{first}"]',))
+    assert first not in {j["company"] for j in digest.next_batch(5, TODAY)}
