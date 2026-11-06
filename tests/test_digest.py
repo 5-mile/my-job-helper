@@ -240,10 +240,18 @@ def test_lookalike_hyundai_names_are_not_big():
 
 
 def test_tags_mark_career_dorm_bus_from_title_and_body():
-    job = {**_job(1, "화학 생산직"), "career": "신입·경력"}
+    job = {**_job(1, "화학 생산직"), "career": "경력2년↑"}
     assert digest.tags(job, "기숙사 제공, 통근버스 운행") == "💼🏠🚌"
-    assert digest.tags({**_job(2, "생산직"), "career": "경력무관"}) == ""
-    assert digest.tags(_job(3, "생산직"), "동종업계 유경험자 우대") == "💼"
+    assert digest.tags({**_job(2, "생산직"), "career": "신입·경력"}, "유경험자 우대") == ""
+    assert digest.tags(_job(3, "생산직"), "화학 공정 경험자 우대") == "💼"
+
+
+def test_tagged_jobs_rank_higher(monkeypatch):
+    monkeypatch.setattr(digest, "send_telegram", lambda text, kb=None: True)
+    jobs = [_job(1, "생산직"), _job(2, "생산직")]
+    detail = lambda link: "기숙사 제공" if link.endswith("rec_idx=2&search_uuid=x") else ""
+    digest.run(limit=5, today=TODAY, fetch=lambda *a, **k: (jobs, _Diag()), detail=detail, dry_run=True)
+    assert digest.next_batch(5, TODAY)[0]["company"] == "회사2"
 
 
 def test_new_pool_rows_get_tags_from_body_once(monkeypatch):

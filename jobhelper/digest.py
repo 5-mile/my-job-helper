@@ -42,7 +42,11 @@ _OFF = re.compile(
 _ON = re.compile(r"생산|OP|오퍼레이터|Operator|운전원|설비|공정|제조|화학|이차전지|배터리|보전|정비|유틸|품질|지게차|자재")
 _TEMP = re.compile(r"아르바이트|단기")
 # 공고 표시용 표: 💼 경력 쳐줄 만한 곳, 🏠 기숙사, 🚌 통근버스 (제목·분야·본문에서 찾는다)
-_CAREER = re.compile(r"경력\s*우대|경력자\s*우대|유경험자|경험자\s*우대|관련\s*(경력|경험)")
+# 💼 는 내 경력(화학·공정·설비·생산)을 쳐줄 만한 곳만: 경력 N년 요구, 또는 그 분야 경력·경험 우대.
+# "신입·경력"(경력도 받음)이나 막연한 "유경험자 우대"는 절반 넘게 걸려 구별이 안 돼 뺐다.
+_CAREER = re.compile(r"(화학|공정|설비|생산|제조|이차전지|2차전지|배터리|소재|동종)[^.\n]{0,20}(경력|경험)[^.\n]{0,10}우대")
+_CAREER_YEARS = re.compile(r"경력\s*\d")
+TAG_BONUS = {"💼": 3, "🏠": 2}  # 표가 붙으면 점수를 올려 하루 목록에 먼저 들어가게
 _DORM = re.compile(r"기숙사|사택")
 _BUS = re.compile(r"통근\s*버스|셔틀|통근\s*차량")
 TAG_LEGEND = "💼 경력 우대 · 🏠 기숙사 · 🚌 통근버스"
@@ -98,10 +102,11 @@ def short_link(job: dict[str, Any]) -> str:
 
 
 def tags(job: dict[str, Any], body: str = "") -> str:
-    text = f"{job.get('position') or ''} {job.get('sector') or ''} {body}"
+    # 줄바꿈으로 나눠 제목의 "생산" 과 본문의 "유경험자 우대" 가 이어져 걸리지 않게 한다.
+    text = f"{job.get('position') or ''}\n{job.get('sector') or ''}\n{body}"
     career = job.get("career") or ""
     marks = [
-        ("💼", _CAREER.search(text) or ("경력" in career and "무관" not in career)),
+        ("💼", _CAREER.search(text) or _CAREER_YEARS.search(career)),
         ("🏠", _DORM.search(text)),
         ("🚌", _BUS.search(text)),
     ]
@@ -395,6 +400,7 @@ def run(
     fresh_picked = [j for j in picked if j["key"] not in pooled]
     for n, j in enumerate(fresh_picked):
         j["tags"] = tags(j, detail(j.get("link") or "") if detail and n < DETAIL_PER_RUN else "")
+        j["score"] += sum(b for mark, b in TAG_BONUS.items() if mark in j["tags"])
     _add_to_pool([{**j, "pop": pop.get(j["key"], "")} for j in fresh_picked], db_path)
     _refresh_pop(pop, db_path)
     if not dry_run:
